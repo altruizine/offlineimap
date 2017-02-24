@@ -11,6 +11,10 @@ Contacts
  - email: mathstuf at gmail.com
  - github: mathstuf
 
+- Darshit Shah
+ - email: darnir at gmail.com
+ - github: darnir
+
 - Eygene Ryabinkin
  - email: rea at freebsd.org
  - github: konvpalto
@@ -25,6 +29,10 @@ Contacts
  - github: iliastsi
  - other: Debian maintainer
 
+- "J"
+ - email: offlineimap at 927589452.de
+ - other: FreeBSD user
+
 - Łukasz Żarnowiecki
  - email: dolohow at outlook.com
  - github: dolohow
@@ -32,6 +40,12 @@ Contacts
 - Nicolas Sebrecht
  - email: nicolas.s-dev at laposte.net
  - github: nicolas33
+ - system: Linux
+
+- Rainer M Krug
+ - email: Rainer at krugs.de
+ - github: rkrug
+ - system: OSX
 
 - Sebastian Spaeth
  - email: sebastian at sspaeth.de
@@ -44,11 +58,14 @@ Testers
 
 - Abdó Roig-Maranges
 - Ben Boeckel
+- Darshit Shah
 - Eygene Ryabinkin
 - Igor Almeida
 - Ilias Tsitsimpis
+- "J"
 - Łukasz Żarnowiecki
 - Nicolas Sebrecht
+- Rainer M Krug
 
 
 Maintainers

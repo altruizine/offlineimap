@@ -55,6 +55,9 @@ class IMAPFolder(BaseFolder):
         # self.ui is set in BaseFolder.
         self.imap_query = ['BODY.PEEK[]']
 
+        # number of times to retry fetching messages
+        self.retrycount = self.repository.getconfint('retrycount', 2)
+
         fh_conf = self.repository.account.getconf('filterheaders', '')
         self.filterheaders = [h for h in re.split(r'\s*,\s*', fh_conf) if h]
 
@@ -305,7 +308,7 @@ class IMAPFolder(BaseFolder):
                   this UID could be found.
         """
 
-        data = self._fetch_from_imap(str(uid), 2)
+        data = self._fetch_from_imap(str(uid), self.retrycount)
 
         # Data looks now e.g.
         # [('320 (UID 17061 BODY[] {2565}','msgbody....')]
@@ -757,13 +760,15 @@ class IMAPFolder(BaseFolder):
         # exactly one response.
         if res_type == 'OK':
             data = [res for res in data if not isinstance(res, str)]
-        # Could not fetch message.
+
+        # Could not fetch message.  Note: it is allowed by rfc3501 to return any
+        # data for the UID FETCH command.
         if data == [None] or res_type != 'OK' or len(data) != 1:
             severity = OfflineImapError.ERROR.MESSAGE
             reason = "IMAP server '%s' failed to fetch messages UID '%s'."\
-                "Server responded: %s %s"% (self.getrepository(), uids,
+                " Server responded: %s %s"% (self.getrepository(), uids,
                                              res_type, data)
-            if data == [None]:
+            if data == [None] or len(data) < 1:
                 # IMAP server did not find a message with this UID.
                 reason = "IMAP server '%s' does not have a message "\
                     "with UID '%s'"% (self.getrepository(), uids)
