@@ -8,9 +8,11 @@ __author__      = "John Goerzen"
 __author_email__= "offlineimap-project@lists.alioth.debian.org"
 __description__ = "Disconnected Universal IMAP Mail Synchronization/Reader Support"
 __license__  = "Licensed under the GNU GPL v2 or any later version (with an OpenSSL exception)"
+__version__     += "-altruizine-dev"
 __bigcopyright__ = """%(__productname__)s %(__version__)s
   %(__license__)s""" % locals()
 __homepage__ = "http://www.offlineimap.org"
+
 
 banner = __bigcopyright__
 
