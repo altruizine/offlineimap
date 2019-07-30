@@ -2,7 +2,9 @@
 #
 # Module that supports distribution-specific functions.
 
+from __future__ import absolute_import
 import platform
+import distro
 import os
 
 
@@ -43,7 +45,7 @@ def get_os_name():
     OS = platform.system().lower()
 
     if OS.startswith('linux'):
-        DISTRO = platform.linux_distribution()[0]
+        DISTRO = distro.linux_distribution()[0]
         if DISTRO:
           OS = OS + "-%s" % DISTRO.split()[0].lower()
 
