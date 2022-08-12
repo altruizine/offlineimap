@@ -18,9 +18,9 @@ __all__ = ("IMAP4", "IMAP4_SSL", "IMAP4_stream",
            "Internaldate2Time", "ParseFlags", "Time2Internaldate",
            "Mon2num", "MonthNames", "InternalDate")
 
-__version__ = "2.55"
+__version__ = "2.101"
 __release__ = "2"
-__revision__ = "55"
+__revision__ = "101"
 __credits__ = """
 Authentication code contributed by Donn Cave <donn@u.washington.edu> June 1998.
 String method conversion by ESR, February 2001.
@@ -53,7 +53,7 @@ Fix for correct Python 3 exception handling by Tobias Brink <tobias.brink@gmail.
 Fix to allow interruptible IDLE command by Tim Peoples <dromedary512@users.sf.net> September 2015.
 Add support for TLS levels by Ben Boeckel <mathstuf@gmail.com> September 2015.
 Fix for shutown exception by Sebastien Gross <seb@chezwam.org> November 2015."""
-__author__ = "Piers Lauder <piers@janeelix.com>"
+__author__ = "Piers Lauder <piers@janeelix.com> & offlineimap team"
 __URL__ = "http://imaplib2.sourceforge.net"
 __license__ = "Python License"
 
@@ -67,7 +67,6 @@ if bytes != str:
 else:
     import Queue as queue
     string_types = basestring
-    threading.TIMEOUT_MAX = 9223372036854.0
 
 select_module = select
 
@@ -109,6 +108,7 @@ Commands = {
         'CREATE':       ((AUTH, SELECTED),            True),
         'DELETE':       ((AUTH, SELECTED),            True),
         'DELETEACL':    ((AUTH, SELECTED),            True),
+        'ENABLE':       ((AUTH,),                     False),
         'EXAMINE':      ((AUTH, SELECTED),            False),
         'EXPUNGE':      ((SELECTED,),                 True),
         'FETCH':        ((SELECTED,),                 True),
@@ -191,7 +191,7 @@ class Request(object):
     def get_response(self, exc_fmt=None):
         self.callback = None
         if __debug__: self.parent._log(3, '%s:%s.ready.wait' % (self.name, self.tag))
-        self.ready.wait(threading.TIMEOUT_MAX)
+        self.ready.wait()
 
         if self.aborted is not None:
             typ, val = self.aborted
@@ -300,17 +300,18 @@ class IMAP4(object):
     class readonly(abort): pass     # Mailbox status changed to READ-ONLY
 
 
+    # These must be encoded according to utf8 setting in _mode_xxx():
+    _literal = br'.*{(?P<size>\d+)}$'
+    _untagged_status = br'\* (?P<data>\d+) (?P<type>[A-Z-]+)( (?P<data2>.*))?'
+
     continuation_cre = re.compile(r'\+( (?P<data>.*))?')
-    literal_cre = re.compile(r'.*{(?P<size>\d+)}$')
     mapCRLF_cre = re.compile(r'\r\n|\r|\n')
         # Need to quote "atom-specials" :-
         #   "(" / ")" / "{" / SP / 0x00 - 0x1f / 0x7f / "%" / "*" / DQUOTE / "\" / "]"
         # so match not the inverse set
     mustquote_cre = re.compile(r"[^!#$&'+,./0-9:;<=>?@A-Z\[^_`a-z|}~-]")
     response_code_cre = re.compile(r'\[(?P<type>[A-Z-]+)( (?P<data>[^\]]*))?\]')
-    # sequence_set_cre = re.compile(r"^[0-9]+(:([0-9]+|\*))?(,[0-9]+(:([0-9]+|\*))?)*$")
     untagged_response_cre = re.compile(r'\* (?P<type>[A-Z-]+)( (?P<data>.*))?')
-    untagged_status_cre = re.compile(r'\* (?P<data>\d+) (?P<type>[A-Z-]+)( (?P<data2>.*))?')
 
 
     def __init__(self, host=None, port=None, debug=None, debug_file=None, identifier=None, timeout=None, debug_buf_lvl=None):
@@ -340,7 +341,9 @@ class IMAP4(object):
         self.tagpre = Int2AP(random.randint(4096, 65535))
         self.tagre = re.compile(r'(?P<tag>'
                         + self.tagpre
-                        + r'\d+) (?P<type>[A-Z]+) (?P<data>.*)')
+                        + r'\d+) (?P<type>[A-Z]+) ?(?P<data>.*)')
+
+        self._mode_ascii()	# Only option in py2
 
         if __debug__: self._init_debug(debug, debug_file, debug_buf_lvl)
 
@@ -426,6 +429,28 @@ class IMAP4(object):
         if attr in Commands:
             return getattr(self, attr.lower())
         raise AttributeError("Unknown IMAP4 command: '%s'" % attr)
+
+
+    def _mode_ascii(self):
+        self.utf8_enabled = False
+        self._encoding = 'ascii'
+        if bytes != str:
+            self.literal_cre = re.compile(self._literal, re.ASCII)
+            self.untagged_status_cre = re.compile(self._untagged_status, re.ASCII)
+        else:
+            self.literal_cre = re.compile(self._literal)
+            self.untagged_status_cre = re.compile(self._untagged_status)
+
+
+    def _mode_utf8(self):
+        self.utf8_enabled = True
+        self._encoding = 'utf-8'
+        if bytes != str:
+            self.literal_cre = re.compile(self._literal)
+            self.untagged_status_cre = re.compile(self._untagged_status)
+        else:
+            self.literal_cre = re.compile(self._literal, re.UNICODE)
+            self.untagged_status_cre = re.compile(self._untagged_status, re.UNICODE)
 
 
 
@@ -519,7 +544,16 @@ class IMAP4(object):
 
             ssl_version =  TLS_MAP[self.tls_level][self.ssl_version]
 
-            self.sock = ssl.wrap_socket(self.sock, self.keyfile, self.certfile, ca_certs=self.ca_certs, cert_reqs=cert_reqs, ssl_version=ssl_version)
+            if getattr(ssl, 'HAS_SNI', False):
+                ctx = ssl.SSLContext(ssl_version)
+                ctx.verify_mode = cert_reqs
+                if self.ca_certs is not None:
+                    ctx.load_verify_locations(self.ca_certs)
+                if self.certfile or self.keyfile:
+                    ctx.load_cert_chain(self.certfile, self.keyfile)
+                self.sock = ctx.wrap_socket(self.sock, server_hostname=self.host)
+            else:
+                self.sock = ssl.wrap_socket(self.sock, self.keyfile, self.certfile, ca_certs=self.ca_certs, cert_reqs=cert_reqs, ssl_version=ssl_version)
             ssl_exc = ssl.SSLError
             self.read_fd = self.sock.fileno()
         except ImportError:
@@ -676,7 +710,10 @@ class IMAP4(object):
             date_time = Time2Internaldate(date_time)
         else:
             date_time = None
-        self.literal = self.mapCRLF_cre.sub(CRLF, message)
+        literal = self.mapCRLF_cre.sub(CRLF, message)
+        if self.utf8_enabled:
+            literal = b'UTF8 (' + literal + b')'
+        self.literal = literal
         try:
             return self._simple_command(name, mailbox, flags, date_time, **kw)
         finally:
@@ -772,6 +809,19 @@ class IMAP4(object):
         Delete the ACLs (remove any rights) set for who on mailbox."""
 
         return self._simple_command('DELETEACL', mailbox, who, **kw)
+
+
+    def enable(self, capability):
+        """Send an RFC5161 enable string to the server.
+
+        (typ, [data]) = <intance>.enable(capability)
+        """
+        if 'ENABLE' not in self.capabilities:
+            raise self.error("Server does not support ENABLE")
+        typ, data = self._simple_command('ENABLE', capability)
+        if typ == 'OK' and 'UTF8=ACCEPT' in capability.upper():
+            self._mode_utf8()
+        return typ, data
 
 
     def examine(self, mailbox='INBOX', **kw):
@@ -1025,11 +1075,14 @@ class IMAP4(object):
     def search(self, charset, *criteria, **kw):
         """(typ, [data]) = search(charset, criterion, ...)
         Search mailbox for matching messages.
+        If UTF8 is enabled, charset MUST be None.
         'data' is space separated list of matching message numbers."""
 
         name = 'SEARCH'
         kw['untagged_response'] = name
         if charset:
+            if self.utf8_enabled:
+                raise self.error("Non-None charset not valid in UTF8 mode")
             return self._simple_command(name, 'CHARSET', charset, *criteria, **kw)
         return self._simple_command(name, *criteria, **kw)
 
@@ -1346,7 +1399,7 @@ class IMAP4(object):
             self.commands_lock.release()
             if need_event:
                 if __debug__: self._log(3, 'sync command %s waiting for empty commands Q' % name)
-                self.state_change_free.wait(threading.TIMEOUT_MAX)
+                self.state_change_free.wait()
                 if __debug__: self._log(3, 'sync command %s proceeding' % name)
 
         if self.state not in Commands[name][CMD_VAL_STATES]:
@@ -1411,6 +1464,9 @@ class IMAP4(object):
 
             if not ok:
                 break
+
+            if data == 'go ahead':	# Apparently not uncommon broken IMAP4 server response to AUTHENTICATE command
+                data = ''
 
             # Send literal
 

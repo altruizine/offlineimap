@@ -41,12 +41,21 @@ MSGCOPY_NAMESPACE = 'MSGCOPY_'
 
 
 class IMAPFolder(BaseFolder):
-    def __init__(self, imapserver, name, repository):
-        # FIXME: decide if unquoted name is from the responsability of the
-        # caller or not, but not both.
+    def __init__(self, imapserver, name, repository, decode=True):
+        # decode the folder name from IMAP4_utf_7 to utf_8 if
+        # - utf8foldernames is enabled for the *account*
+        # - the decode argument is given
+        #   (default True is used when the folder name is the result of
+        #    querying the IMAP server, while False is used when creating
+        #    a folder object from a locally available utf_8 name)
+        # In any case the given name is first dequoted.
         name = imaputil.dequote(name)
+        if decode and repository.account.utf_8_support:
+            name = imaputil.IMAP_utf8(name)
         self.sep = imapserver.delim
         super(IMAPFolder, self).__init__(name, repository)
+        if repository.getdecodefoldernames():
+            self.visiblename = imaputil.decode_mailbox_name(self.visiblename)
         self.idle_mode = False
         self.expunge = repository.getexpunge()
         self.root = None # imapserver.root
@@ -67,7 +76,6 @@ class IMAPFolder(BaseFolder):
         if self.repository.getidlefolders():
             self.idle_mode = True
 
-
     def __selectro(self, imapobj, force=False):
         """Select this folder when we do not need write access.
 
@@ -78,9 +86,15 @@ class IMAPFolder(BaseFolder):
         :param: Enforce new SELECT even if we are on that folder already.
         :returns: raises :exc:`OfflineImapError` severity FOLDER on error"""
         try:
-            imapobj.select(self.getfullname(), force = force)
+            imapobj.select(self.getfullIMAPname(), force=force)
         except imapobj.readonly:
-            imapobj.select(self.getfullname(), readonly = True, force = force)
+            imapobj.select(self.getfullIMAPname(), readonly=True, force=force)
+
+    def getfullIMAPname(self):
+        name = self.getfullname()
+        if self.repository.account.utf_8_support:
+            name = imaputil.utf8_IMAP(name)
+        return name
 
     # Interface from BaseFolder
     def suggeststhreads(self):
@@ -145,7 +159,7 @@ class IMAPFolder(BaseFolder):
             imapobj = self.imapserver.acquireconnection()
             try:
                 # Select folder and get number of messages.
-                restype, imapdata = imapobj.select(self.getfullname(), True,
+                restype, imapdata = imapobj.select(self.getfullIMAPname(), True,
                                                    True)
                 self.imapserver.releaseconnection(imapobj)
             except OfflineImapError as e:
@@ -195,11 +209,17 @@ class IMAPFolder(BaseFolder):
 
             Returns: range(s) for messages or None if no messages
             are to be fetched."""
-            res_type, res_data = imapobj.search(None, search_conditions)
-            if res_type != 'OK':
+            try:
+                res_type, res_data = imapobj.search(None, search_conditions)
+                if res_type != 'OK':
+                    raise OfflineImapError("SEARCH in folder [%s]%s failed. "
+                        "Search string was '%s'. Server responded '[%s] %s'"% (
+                            self.getrepository(), self, search_cond, res_type, res_data),
+                        OfflineImapError.ERROR.FOLDER)
+            except Exception as e:
                 raise OfflineImapError("SEARCH in folder [%s]%s failed. "
-                    "Search string was '%s'. Server responded '[%s] %s'"% (
-                    self.getrepository(), self, search_cond, res_type, res_data),
+                        "Search string was '%s'. Error: %s"% (
+                            self.getrepository(), self, search_cond, str(e)),
                     OfflineImapError.ERROR.FOLDER)
             # Davmail returns list instead of list of one element string.
             # On first run the first element is empty.
@@ -211,7 +231,7 @@ class IMAPFolder(BaseFolder):
                 res_data.remove(0)
             return res_data
 
-        res_type, imapdata = imapobj.select(self.getfullname(), True, True)
+        res_type, imapdata = imapobj.select(self.getfullIMAPname(), True, True)
         if imapdata == [None] or imapdata[0] == '0':
             # Empty folder, no need to populate message list.
             return None
@@ -289,13 +309,6 @@ class IMAPFolder(BaseFolder):
                 self.messagelist[uid] = {'uid': uid, 'flags': flags, 'time': rtime,
                     'keywords': keywords}
         self.ui.messagelistloaded(self.repository, self, self.getmessagecount())
-
-    # Interface from BaseFolder
-    def getvisiblename(self):
-        vname = super(IMAPFolder, self).getvisiblename()
-        if self.repository.getdecodefoldernames():
-            return imaputil.decode_mailbox_name(vname)
-        return vname
 
     # Interface from BaseFolder
     def getmessage(self, uid):
@@ -389,12 +402,16 @@ class IMAPFolder(BaseFolder):
             return 0
 
         matchinguids = matchinguids.split(' ')
+        matchinguids = list(set(matchinguids)) # Remove duplicates.
         self.ui.debug('imap', '__savemessage_searchforheader: matchinguids now '
             + repr(matchinguids))
         if len(matchinguids) != 1 or matchinguids[0] is None:
-            raise ValueError("While attempting to find UID for message with "
-                             "header %s, got wrong-sized matchinguids of %s"%
-                                 (headername, str(matchinguids)))
+            raise OfflineImapError(
+                "While attempting to find UID for message with "
+                "header %s, got wrong-sized matchinguids of %s"%
+                (headername, str(matchinguids)),
+                OfflineImapError.ERROR.MESSAGE
+            )
         return int(matchinguids[0])
 
     def __savemessage_fetchheaders(self, imapobj, headername, headervalue):
@@ -445,24 +462,46 @@ class IMAPFolder(BaseFolder):
             raise OfflineImapError('Error fetching mail headers: %s'%
                 '. '.join(result[1]), OfflineImapError.ERROR.MESSAGE)
 
+        # result is like:
+        # [
+        #    ('185 (RFC822.HEADER {1789}', '... mail headers ...'), ' UID 2444)',
+        #    ('186 (RFC822.HEADER {1789}', '... 2nd mail headers ...'), ' UID 2445)'
+        # ]
         result = result[1]
 
-        found = 0
+        found = None
+        # item is like:
+        # ('185 (RFC822.HEADER {1789}', '... mail headers ...'), ' UID 2444)'
         for item in result:
-            if found == 0 and type(item) == type( () ):
+            if found is None and type(item) == tuple:
                 # Walk just tuples.
                 if re.search("(?:^|\\r|\\n)%s:\s*%s(?:\\r|\\n)"% (headername, headervalue),
                         item[1], flags=re.IGNORECASE):
-                    found = 1
-            elif found == 1:
-                if type(item) == type (""):
+                    found = item[0]
+            elif found is not None:
+                if type(item) == type(""):
                     uid = re.search("UID\s+(\d+)", item, flags=re.IGNORECASE)
                     if uid:
                         return int(uid.group(1))
                     else:
-                        self.ui.warn("Can't parse FETCH response, can't find UID: %s", result.__repr__())
+                        # This parsing is for Davmail.
+                        # https://github.com/OfflineIMAP/offlineimap/issues/479
+                        # item is like:
+                        # ')'
+                        # and item[0] stored in "found" is like:
+                        # '1694 (UID 1694 RFC822.HEADER {1294}'
+                        uid = re.search("\d+\s+\(UID\s+(\d+)", found, flags=re.IGNORECASE)
+                        if uid:
+                            return int(uid.group(1))
+
+                        self.ui.warn("Can't parse FETCH response, can't find UID in %s"%
+                            item
+                        )
+                        self.ui.debug('imap', "Got: %s"% repr(result))
                 else:
-                    self.ui.warn("Can't parse FETCH response, we awaited string: %s", result.__repr__())
+                    self.ui.warn("Can't parse FETCH response, we awaited string: %s"%
+                        repr(item)
+                    )
 
         return 0
 
@@ -610,7 +649,7 @@ class IMAPFolder(BaseFolder):
 
                 try:
                     # Select folder for append and make the box READ-WRITE.
-                    imapobj.select(self.getfullname())
+                    imapobj.select(self.getfullIMAPname())
                 except imapobj.readonly:
                     # readonly exception. Return original uid to notify that
                     # we did not save the message. (see savemessage in Base.py)
@@ -619,7 +658,7 @@ class IMAPFolder(BaseFolder):
 
                 # Do the APPEND.
                 try:
-                    (typ, dat) = imapobj.append(self.getfullname(),
+                    (typ, dat) = imapobj.append(self.getfullIMAPname(),
                         imaputil.flagsmaildir2imap(flags), date, content)
                     # This should only catch 'NO' responses since append()
                     # will raise an exception for 'BAD' responses:
@@ -679,31 +718,48 @@ class IMAPFolder(BaseFolder):
                 resp = imapobj._get_untagged_response('APPENDUID')
                 if resp == [None] or resp is None:
                     self.ui.warn("Server supports UIDPLUS but got no APPENDUID "
-                        "appending a message.")
+                        "appending a message. Got: %s."% str(resp))
                     return 0
-                uid = int(resp[-1].split(' ')[1])
+                try:
+                    uid = int(resp[-1].split(' ')[1])
+                except ValueError as e:
+                    uid = 0 # Definetly not what we should have.
+                except Exception as e:
+                    raise OfflineImapError("Unexpected response: %s"% str(resp),
+                        OfflineImapError.ERROR.MESSAGE)
                 if uid == 0:
                     self.ui.warn("savemessage: Server supports UIDPLUS, but"
-                        " we got no usable uid back. APPENDUID reponse was "
+                        " we got no usable UID back. APPENDUID reponse was "
                         "'%s'"% str(resp))
             else:
-                # We don't support UIDPLUS.
-                uid = self.__savemessage_searchforheader(imapobj, headername,
-                    headervalue)
-                # See docs for savemessage in Base.py for explanation
-                # of this and other return values.
-                if uid == 0:
-                    self.ui.debug('imap', 'savemessage: attempt to get new UID '
-                        'UID failed. Search headers manually.')
-                    uid = self.__savemessage_fetchheaders(imapobj, headername,
+                try:
+                    # We don't use UIDPLUS.
+                    uid = self.__savemessage_searchforheader(imapobj, headername,
                         headervalue)
-                    self.ui.warn('imap', "savemessage: Searching mails for new "
-                        "Message-ID failed. Could not determine new UID.")
+                    # See docs for savemessage in Base.py for explanation
+                    # of this and other return values.
+                    if uid == 0:
+                        self.ui.debug('imap', 'savemessage: attempt to get new UID '
+                            'UID failed. Search headers manually.')
+                        uid = self.__savemessage_fetchheaders(imapobj, headername,
+                            headervalue)
+                        self.ui.warn("savemessage: Searching mails for new "
+                            "Message-ID failed. Could not determine new UID "
+                            "on %s."% self.getname())
+                # Something wrong happened while trying to get the UID. Explain
+                # the error might be about the 'get UID' process not necesseraly
+                # the APPEND.
+                except Exception:
+                    self.ui.warn("%s: could not determine the UID while we got "
+                        "no error while appending the email with '%s: %s'"%
+                        (self.getname(), headername, headervalue)
+                    )
+                    raise
         finally:
             if imapobj:
                 self.imapserver.releaseconnection(imapobj)
 
-        if uid: # Avoid UID FETCH 0 crash happening later on
+        if uid: # Avoid UID FETCH 0 crash happening later on.
             self.messagelist[uid] = self.msglist_item_initializer(uid)
             self.messagelist[uid]['flags'] = flags
 
@@ -726,7 +782,7 @@ class IMAPFolder(BaseFolder):
             fails_left = retry_num  # Retry on dropped connection.
             while fails_left:
                 try:
-                    imapobj.select(self.getfullname(), readonly=True)
+                    imapobj.select(self.getfullIMAPname(), readonly=True)
                     res_type, data = imapobj.uid('fetch', uids, query)
                     break
                 except imapobj.abort as e:
@@ -786,7 +842,7 @@ class IMAPFolder(BaseFolder):
         - field: field name to be stored/updated
         - data: field contents
         """
-        imapobj.select(self.getfullname())
+        imapobj.select(self.getfullIMAPname())
         res_type, retdata = imapobj.uid('store', uid, field, data)
         if res_type != 'OK':
             severity = OfflineImapError.ERROR.MESSAGE
@@ -847,7 +903,7 @@ class IMAPFolder(BaseFolder):
         imapobj = self.imapserver.acquireconnection()
         try:
             try:
-                imapobj.select(self.getfullname())
+                imapobj.select(self.getfullIMAPname())
             except imapobj.readonly:
                 self.ui.flagstoreadonly(self, uidlist, flags)
                 return
@@ -922,7 +978,7 @@ class IMAPFolder(BaseFolder):
         imapobj = self.imapserver.acquireconnection()
         try:
             try:
-                imapobj.select(self.getfullname())
+                imapobj.select(self.getfullIMAPname())
             except imapobj.readonly:
                 self.ui.deletereadonly(self, uidlist)
                 return

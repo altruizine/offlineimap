@@ -11,6 +11,7 @@ DOCBASE="${WEBSITE}/_doc"
 DESTBASE="${DOCBASE}/versions"
 VERSIONS_YML="${WEBSITE}/_data/versions.yml"
 ANNOUNCES_YML="${WEBSITE}/_data/announces.yml"
+ANNOUNCES_YML_LIMIT=31
 ANNOUNCES_YML_TMP="${ANNOUNCES_YML}.tmp"
 CONTRIB_YML="${WEBSITE}/_data/contribs.yml"
 CONTRIB="${DOCBASE}/contrib"
@@ -54,11 +55,17 @@ function api () {
   # This let know the website about the available APIs documentations.
   echo "Building Jekyll data: $VERSIONS_YML"
   # Erase previous content.
-  echo "$HEADER" > "$VERSIONS_YML"
+  echo > "$VERSIONS_YML" <<EOF
+$HEADER
+# Used to publish the APIs.
+#
+# However, it's correct to _remove_ old API docs here. In this case, don't
+# forget to adjust the _doc/versions directory too.
+EOF
   for version in $(ls "$DESTBASE" -1 | sort -nr)
   do
     echo "- $version"
-  done >> "$VERSIONS_YML"
+  done | sort -V >> "$VERSIONS_YML"
 }
 
 
@@ -120,8 +127,17 @@ function releases () {
     d="$(parse_releases_get_date "$title")"
     echo "- {date: '${d}', version: '${v}', link: 'Changelog.maint.html#${link}'}"
   done | tee -a "$ANNOUNCES_YML_TMP"
-  sort -nr "$ANNOUNCES_YML_TMP" >> "$ANNOUNCES_YML"
+  sort -nr "$ANNOUNCES_YML_TMP" | head -n $ANNOUNCES_YML_LIMIT >> "$ANNOUNCES_YML"
   rm -f "$ANNOUNCES_YML_TMP"
+}
+
+function manhtml () {
+  set -e
+
+  cd ./docs
+  make manhtml
+  cd ..
+  cp -afv ./docs/manhtml/* "$DOCBASE"
 }
 
 
@@ -136,6 +152,9 @@ do
       ;;
     "napi")
       api
+      ;;
+    "nhtml")
+      manhtml
       ;;
     "ncontrib")
       contrib

@@ -1,5 +1,5 @@
 # Gmail IMAP folder support
-# Copyright (C) 2002-2016 John Goerzen & contributors.
+# Copyright (C) 2002-2017 John Goerzen & contributors.
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -15,6 +15,8 @@
 #    along with this program; if not, write to the Free Software
 #    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
+"""Folder implementation to support features of the Gmail IMAP server."""
+
 import re
 import six
 from sys import exc_info
@@ -23,7 +25,6 @@ from offlineimap import imaputil, imaplibutil, OfflineImapError
 import offlineimap.accounts
 from .IMAP import IMAPFolder
 
-"""Folder implementation to support features of the Gmail IMAP server."""
 
 class GmailFolder(IMAPFolder):
     """Folder implementation to support features of the Gmail IMAP server.
@@ -41,11 +42,8 @@ class GmailFolder(IMAPFolder):
       https://developers.google.com/google-apps/gmail/imap_extensions
     """
 
-    def __init__(self, imapserver, name, repository):
-        super(GmailFolder, self).__init__(imapserver, name, repository)
-        self.trash_folder = repository.gettrashfolder(name)
-        # Gmail will really delete messages upon EXPUNGE in these folders
-        self.real_delete_folders = [self.trash_folder, repository.getspamfolder()]
+    def __init__(self, imapserver, name, repository, decode=True):
+        super(GmailFolder, self).__init__(imapserver, name, repository, decode)
 
         # The header under which labels are stored
         self.labelsheader = self.repository.account.getconf('labelsheader', 'X-Keywords')
@@ -81,7 +79,7 @@ class GmailFolder(IMAPFolder):
 
         # Embed the labels into the message headers
         if self.synclabels:
-            m = re.search('X-GM-LABELS\s*\(([^\)]*)\)', data[0][0])
+            m = re.search('X-GM-LABELS\s*[(](.*)[)]', data[0][0])
             if m:
                 labels = set([imaputil.dequote(lb) for lb in imaputil.imapsplit(m.group(1))])
             else:
@@ -155,6 +153,7 @@ class GmailFolder(IMAPFolder):
             if messagestr == None:
                 continue
             messagestr = messagestr.split(' ', 1)[1]
+            # e.g.: {'X-GM-LABELS': '("Webserver (RW.net)" "\\Inbox" GInbox)', 'FLAGS': '(\\Seen)', 'UID': '275440'}
             options = imaputil.flags2hash(messagestr)
             if not 'UID' in options:
                 self.ui.warn('No UID in message with options %s' %\
@@ -164,7 +163,8 @@ class GmailFolder(IMAPFolder):
                 uid = int(options['UID'])
                 self.messagelist[uid] = self.msglist_item_initializer(uid)
                 flags = imaputil.flagsimap2maildir(options['FLAGS'])
-                m = re.search('\(([^\)]*)\)', options['X-GM-LABELS'])
+                # e.g.: '("Webserver (RW.net)" "\\Inbox" GInbox)'
+                m = re.search('^[(](.*)[)]', options['X-GM-LABELS'])
                 if m:
                     labels = set([imaputil.dequote(lb) for lb in imaputil.imapsplit(m.group(1))])
                 else:

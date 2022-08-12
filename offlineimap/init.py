@@ -1,5 +1,5 @@
 # OfflineIMAP initialization code
-# Copyright (C) 2002-2016 John Goerzen & contributors
+# Copyright (C) 2002-2017 John Goerzen & contributors
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -71,6 +71,17 @@ class OfflineImap(object):
       oi = OfflineImap()
       oi.run()
     """
+
+    def get_env_info(self):
+        info = "imaplib2 v%s (%s), Python v%s"% (
+              imaplib.__version__, imaplib.DESC, PYTHON_VERSION
+        )
+        try:
+            import ssl
+            info = "%s, %s"% (info, ssl.OPENSSL_VERSION)
+        except:
+            pass
+        return info
 
     def run(self):
         """Parse the commandline and invoke everything"""
@@ -180,9 +191,8 @@ class OfflineImap(object):
         glob.set_options(options)
 
         if options.version:
-            print("offlineimap v%s, imaplib2 v%s (%s), Python v%s"% (
-                  offlineimap.__version__, imaplib.__version__, imaplib.DESC,
-                  PYTHON_VERSION)
+            print("offlineimap v%s, %s"% (
+                offlineimap.__version__, self.get_env_info())
             )
             sys.exit(0)
 
@@ -273,6 +283,7 @@ class OfflineImap(object):
 
         # Welcome blurb.
         self.ui.init_banner()
+        self.ui.info(self.get_env_info())
 
         if options.debugtype:
             self.ui.logger.setLevel(logging.DEBUG)
@@ -422,8 +433,9 @@ class OfflineImap(object):
                 accounts.Account.set_abort_event(self.config, 2)
             elif sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
                 # tell each account to ABORT ASAP (ctrl-c)
-                getglobalui().warn("Terminating NOW (this may "\
-                                   "take a few seconds)...")
+                getglobalui().warn("Preparing to shutdown after sync (this may "\
+                                   "take some time), press CTRL-C three "\
+                                   "times to shutdown immediately")
                 accounts.Account.set_abort_event(self.config, 3)
                 if 'thread' in self.ui.debuglist:
                     self.__dumpstacks(5)

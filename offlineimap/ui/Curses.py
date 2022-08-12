@@ -1,5 +1,5 @@
 # Curses-based interfaces
-# Copyright (C) 2003-2016 John Goerzen & contributors.
+# Copyright (C) 2003-2018 John Goerzen & contributors.
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -137,7 +137,13 @@ class CursesAccountFrame:
         sleepstr = '%3d:%02d'% (secs // 60, secs % 60) if secs else 'active'
         accstr = '%s: [%s] %12.12s: '% (self.acc_num, sleepstr, self.account)
 
-        self.ui.exec_locked(self.window.addstr, 0, 0, accstr)
+        def addstr():
+            try:
+                self.window.addstr(0, 0, accstr)
+            except curses.error as e: # Occurs when the terminal is very small
+                pass
+        self.ui.exec_locked(addstr);
+
         self.location = len(accstr)
 
     def setwindow(self, curses_win, acc_num):
@@ -211,7 +217,10 @@ class CursesThreadFrame:
 
     def display(self):
         def locked_display():
-            self.window.addch(self.y, self.x, '@', self.curses_color)
+            try:
+                self.window.addch(self.y, self.x, '@', self.curses_color)
+            except curses.error: # Occurs when the terminal is very small
+                pass
             self.window.refresh()
         # lock the curses IO while fudging stuff
         self.ui.exec_locked(locked_display)
@@ -315,11 +324,11 @@ class CursesLogHandler(logging.StreamHandler):
             y,x = self.ui.logwin.getyx()
             if y or x: self.ui.logwin.addch(10) # no \n before 1st item
             self.ui.logwin.addstr(log_str, color)
+            self.ui.logwin.noutrefresh()
+            self.ui.stdscr.refresh()
         finally:
             self.ui.unlock()
             self.ui.tframe_lock.release()
-        self.ui.logwin.noutrefresh()
-        self.ui.stdscr.refresh()
 
 class Blinkenlights(UIBase, CursesUtil):
     """Curses-cased fancy UI.
@@ -549,7 +558,7 @@ class Blinkenlights(UIBase, CursesUtil):
     def mainException(self):
         UIBase.mainException(self)
 
-    def getpass(self, accountname, config, errmsg=None):
+    def getpass(self, username, config, errmsg=None):
         # disable the hotkeys inputhandler
         self.inputhandler.input_acquire()
 
@@ -558,8 +567,8 @@ class Blinkenlights(UIBase, CursesUtil):
         try:
             #s.gettf().setcolor('white')
             self.warn(" *** Input Required")
-            self.warn(" *** Please enter password for account %s: " % \
-                          accountname)
+            self.warn(" *** Please enter password for user '%s': " % \
+                          username)
             self.logwin.refresh()
             password = self.logwin.getstr()
         finally:
@@ -611,11 +620,12 @@ class Blinkenlights(UIBase, CursesUtil):
             color = curses.A_REVERSE
         self.bannerwin.clear() # Delete old content (eg before resizes)
         self.bannerwin.bkgd(' ', color) # Fill background with that color
-        string = "%s %s"% (offlineimap.__productname__,
-            offlineimap.__version__)
-        self.bannerwin.addstr(0, 0, string, color)
-        self.bannerwin.addstr(0, self.width -len(offlineimap.__copyright__) -1,
-                              offlineimap.__copyright__, color)
+        string = "%s %s" % (offlineimap.__productname__,
+                            offlineimap.__version__)
+        spaces = " " * max(1, (self.width - len(offlineimap.__copyright__)
+                               - len(string) - 1))
+        string = "%s%s%s" % (string, spaces, offlineimap.__copyright__)
+        self.bannerwin.addnstr(0, 0, string, self.width - 1, color)
         self.bannerwin.noutrefresh()
 
     def draw_logwin(self):

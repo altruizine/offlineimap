@@ -1,6 +1,6 @@
 """ IMAP repository support """
 
-# Copyright (C) 2002-2016 John Goerzen & contributors
+# Copyright (C) 2002-2019 John Goerzen & contributors
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -222,7 +222,7 @@ class IMAPRepository(BaseRepository):
         return self.getconfint('remoteport', None)
 
     def getipv6(self):
-        return self.getconfboolean('ipv6', False)
+        return self.getconfboolean('ipv6', None)
 
     def getssl(self):
         return self.getconfboolean('ssl', True)
@@ -293,7 +293,7 @@ class IMAPRepository(BaseRepository):
         comma-separated fingerprints in hex form."""
 
         value = self.getconf('cert_fingerprint', "")
-        return [f.strip().lower() for f in value.split(',') if f]
+        return [f.strip().lower().replace(":", "") for f in value.split(',') if f]
 
     def setoauth2_request_url(self, url):
         self.oauth2_request_url = url
@@ -428,10 +428,10 @@ class IMAPRepository(BaseRepository):
         # No strategy yielded a password!
         return None
 
-    def getfolder(self, foldername):
+    def getfolder(self, foldername, decode=True):
         """Return instance of OfflineIMAP representative folder."""
 
-        return self.getfoldertype()(self.imapserver, foldername, self)
+        return self.getfoldertype()(self.imapserver, foldername, self, decode)
 
     def getfoldertype(self):
         return folder.IMAP.IMAPFolder
@@ -480,8 +480,7 @@ class IMAPRepository(BaseRepository):
             flaglist = [x.lower() for x in imaputil.flagsplit(flags)]
             if '\\noselect' in flaglist:
                 continue
-            foldername = imaputil.dequote(name)
-            retval.append(self.getfoldertype()(self.imapserver, foldername,
+            retval.append(self.getfoldertype()(self.imapserver, name,
                                                self))
         # Add all folderincludes
         if len(self.folderincludes):
@@ -489,7 +488,7 @@ class IMAPRepository(BaseRepository):
             try:
                 for foldername in self.folderincludes:
                     try:
-                        imapobj.select(foldername, readonly=True)
+                        imapobj.select(imaputil.utf8_IMAP(foldername), readonly=True)
                     except OfflineImapError as e:
                         # couldn't select this folderinclude, so ignore folder.
                         if e.severity > OfflineImapError.ERROR.FOLDER:
@@ -498,7 +497,7 @@ class IMAPRepository(BaseRepository):
                                       'Invalid folderinclude:')
                         continue
                     retval.append(self.getfoldertype()(
-                        self.imapserver, foldername, self))
+                        self.imapserver, foldername, self, decode=False))
             finally:
                 self.imapserver.releaseconnection(imapobj)
 
@@ -525,6 +524,8 @@ class IMAPRepository(BaseRepository):
     def deletefolder(self, foldername):
         """Delete a folder on the IMAP server."""
 
+        if self.account.utf_8_support:
+            foldername = imaputil.utf8_IMAP(foldername)
         imapobj = self.imapserver.acquireconnection()
         try:
             result = imapobj.delete(foldername)
@@ -544,18 +545,35 @@ class IMAPRepository(BaseRepository):
 
         :param foldername: Full path of the folder to be created."""
 
-        if foldername is '':
+        if foldername == '':
             return
 
         if self.getreference():
             foldername = self.getreference() + self.getsep() + foldername
         if not foldername: # Create top level folder as folder separator.
             foldername = self.getsep()
+            self.makefolder_single(foldername)
+            return
+
+        parts = foldername.split(self.getsep())
+        folder_paths = [self.getsep().join(parts[:n + 1]) for n in range(len(parts))]
+        for folder_path in folder_paths:
+            try:
+                self.makefolder_single(folder_path)
+            except OfflineImapError as e:
+                reasonLower = e.reason.lower()  # Handle reasons '[ALREADYEXISTS]' and 'Mailbox already exists!' @chris001
+                if not ('already' in reasonLower and 'exists' in reasonLower):
+                    raise
+
+    def makefolder_single(self, foldername):
         self.ui.makefolder(self, foldername)
         if self.account.dryrun:
             return
         imapobj = self.imapserver.acquireconnection()
         try:
+            if self.account.utf_8_support:
+                foldername = imaputil.utf8_IMAP(foldername)
+
             result = imapobj.create(foldername)
             if result[0] != 'OK':
                 raise OfflineImapError("Folder '%s'[%s] could not be created. "

@@ -1,5 +1,5 @@
 # IMAP server support
-# Copyright (C) 2002-2016 John Goerzen & contributors.
+# Copyright (C) 2002-2018 John Goerzen & contributors.
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -15,9 +15,9 @@
 #    along with this program; if not, write to the Free Software
 #    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
+import datetime
 import hmac
 import socket
-import base64
 import json
 import urllib
 import time
@@ -36,13 +36,10 @@ from offlineimap.ui import getglobalui
 
 
 try:
-    # do we have a recent pykerberos?
-    have_gss = False
-    import kerberos
-    if 'authGSSClientWrap' in dir(kerberos):
-        have_gss = True
+    import gssapi
+    have_gss = True
 except ImportError:
-    pass
+    have_gss = False
 
 
 class IMAPServer(object):
@@ -54,9 +51,6 @@ class IMAPServer(object):
     Public instance variables are: self.:
      delim The server's folder delimiter. Only valid after acquireconnection()
     """
-
-    GSS_STATE_STEP = 0
-    GSS_STATE_WRAP = 1
 
     def __init__(self, repos):
         """:repos: a IMAPRepository instance."""
@@ -92,7 +86,7 @@ class IMAPServer(object):
             self.af = socket.AF_INET
         else:
             self.af = socket.AF_UNSPEC
-        self.hostname = None if self.preauth_tunnel else repos.gethost()
+        self.hostname = None if self.transport_tunnel or self.preauth_tunnel else repos.gethost()
         self.port = repos.getport()
         if self.port is None:
             self.port = 993 if self.usessl else 143
@@ -107,8 +101,10 @@ class IMAPServer(object):
         self.sslversion = repos.getsslversion()
         self.starttls = repos.getstarttls()
 
-        if self.tlslevel is not "tls_compat" and self.sslversion is None:
-            raise Exception("When 'tls_version' is not 'tls_compat' "
+        if self.usessl \
+           and self.tlslevel != "tls_compat" \
+           and self.sslversion is None:
+            raise Exception("When 'tls_level' is not 'tls_compat' "
                 "the 'ssl_version' must be set explicitly.")
 
         self.oauth2_refresh_token = repos.getoauth2_refresh_token()
@@ -116,6 +112,7 @@ class IMAPServer(object):
         self.oauth2_client_id = repos.getoauth2_client_id()
         self.oauth2_client_secret = repos.getoauth2_client_secret()
         self.oauth2_request_url = repos.getoauth2_request_url()
+        self.oauth2_access_token_expires_at = None
 
         self.delim = None
         self.root = None
@@ -127,7 +124,6 @@ class IMAPServer(object):
         self.connectionlock = Lock()
         self.reference = repos.getreference()
         self.idlefolders = repos.getidlefolders()
-        self.gss_step = self.GSS_STATE_STEP
         self.gss_vc = None
         self.gssapi = False
 
@@ -183,8 +179,7 @@ class IMAPServer(object):
 
         # get 1) configured password first 2) fall back to asking via UI
         self.password = self.repos.getpassword() or \
-            self.ui.getpass(self.repos.getname(), self.config,
-                self.passworderror)
+            self.ui.getpass(self.username, self.config, self.passworderror)
         self.passworderror = None
         return self.password
 
@@ -208,6 +203,11 @@ class IMAPServer(object):
           http://tools.ietf.org/html/rfc4616"""
 
         authc = self.username
+        if not authc:
+            raise OfflineImapError("No username provided for '%s'"
+                                    % self.repos.getname(),
+                                   OfflineImapError.ERROR.REPO)
+
         passwd = self.__getpassword()
         authz = b''
         if self.user_identity != None:
@@ -221,9 +221,11 @@ class IMAPServer(object):
         return retval
 
     def __xoauth2handler(self, response):
-        if self.oauth2_refresh_token is None \
-                and self.oauth2_access_token is None:
-            return None
+        now = datetime.datetime.now()
+        if self.oauth2_access_token_expires_at \
+                and self.oauth2_access_token_expires_at < now:
+            self.oauth2_access_token = None
+            self.ui.debug('imap', 'xoauth2handler: oauth2_access_token expired')
 
         if self.oauth2_access_token is None:
             if self.oauth2_request_url is None:
@@ -262,41 +264,65 @@ class IMAPServer(object):
                 raise OfflineImapError("xoauth2handler got: %s"% resp,
                     OfflineImapError.ERROR.REPO)
             self.oauth2_access_token = resp['access_token']
+            if u'expires_in' in resp:
+                self.oauth2_access_token_expires_at = now + datetime.timedelta(
+                    seconds=resp['expires_in']/2
+                )
 
-        self.ui.debug('imap', 'xoauth2handler: access_token "%s"'%
-            self.oauth2_access_token)
+        self.ui.debug('imap', 'xoauth2handler: access_token "%s expires %s"'% (
+            self.oauth2_access_token, self.oauth2_access_token_expires_at))
         auth_string = 'user=%s\1auth=Bearer %s\1\1'% (
             self.username, self.oauth2_access_token)
         #auth_string = base64.b64encode(auth_string)
         self.ui.debug('imap', 'xoauth2handler: returning "%s"'% auth_string)
         return auth_string
 
-    def __gssauth(self, response):
-        data = base64.b64encode(response)
+    # Perform the next step handling a GSSAPI connection.
+    # Client sends first, so token will be ignored if there is no context.
+    def __gsshandler(self, token):
+        if token == "":
+            token = None
         try:
-            if self.gss_step == self.GSS_STATE_STEP:
-                if not self.gss_vc:
-                    rc, self.gss_vc = kerberos.authGSSClientInit(
-                        'imap@' + self.hostname)
-                    response = kerberos.authGSSClientResponse(self.gss_vc)
-                rc = kerberos.authGSSClientStep(self.gss_vc, data)
-                if rc != kerberos.AUTH_GSS_CONTINUE:
-                    self.gss_step = self.GSS_STATE_WRAP
-            elif self.gss_step == self.GSS_STATE_WRAP:
-                rc = kerberos.authGSSClientUnwrap(self.gss_vc, data)
-                response = kerberos.authGSSClientResponse(self.gss_vc)
-                rc = kerberos.authGSSClientWrap(
-                    self.gss_vc, response, self.username)
-            response = kerberos.authGSSClientResponse(self.gss_vc)
-        except kerberos.GSSError as err:
-            # Kerberos errored out on us, respond with None to cancel the
-            # authentication
-            self.ui.debug('imap', '%s: %s'% (err[0][0], err[1][0]))
-            return None
+            if not self.gss_vc:
+                name = gssapi.Name('imap@' + self.hostname,
+                                   gssapi.NameType.hostbased_service)
+                self.gss_vc = gssapi.SecurityContext(usage="initiate",
+                                                     name=name)
 
-        if not response:
-            response = ''
-        return base64.b64decode(response)
+            if not self.gss_vc.complete:
+                response = self.gss_vc.step(token)
+                return response if response else ""
+            elif token is None:
+                # uh... context is complete, so there's no negotiation we can
+                # do.  But we also don't have a token, so we can't send any
+                # kind of response.  Empirically, some (but not all) servers
+                # seem to put us in this state, and seem fine with getting no
+                # GSSAPI content in response, so give it to them.
+                return ""
+
+            # Don't bother checking qop because we're over a TLS channel
+            # already.  But hey, if some server started encrypting tomorrow,
+            # we'd be ready since krb5 always requests integrity and
+            # confidentiality support.
+            response = self.gss_vc.unwrap(token)
+
+            # This is a behavior we got from pykerberos.  First byte is one,
+            # first four bytes are preserved (pykerberos calls this a length).
+            # Any additional bytes are username.
+            reply = []
+            reply[0:4] = response.message[0:4]
+            reply[0] = '\x01'
+            if self.username:
+                reply[5:] = self.username
+            reply = ''.join(reply)
+
+            response = self.gss_vc.wrap(reply, response.encrypted)
+            return response.message if response.message else ""
+        except gssapi.exceptions.GSSError as err:
+            # GSSAPI errored out on us; respond with None to cancel the
+            # authentication
+            self.ui.debug('imap', err.gen_message())
+            return None
 
     def __start_tls(self, imapobj):
         if 'STARTTLS' in imapobj.capabilities and not self.usessl:
@@ -330,18 +356,13 @@ class IMAPServer(object):
             return False
 
         self.connectionlock.acquire()
+        self.gssapi = False
         try:
-            imapobj.authenticate('GSSAPI', self.__gssauth)
-            return True
-        except imapobj.error as e:
-            self.gssapi = False
-            raise
-        else:
+            imapobj.authenticate('GSSAPI', self.__gsshandler)
             self.gssapi = True
-            kerberos.authGSSClientClean(self.gss_vc)
-            self.gss_vc = None
-            self.gss_step = self.GSS_STATE_STEP
+            return True
         finally:
+            self.gss_vc = None
             self.connectionlock.release()
 
     def __authn_cram_md5(self, imapobj):
@@ -353,6 +374,10 @@ class IMAPServer(object):
         return True
 
     def __authn_xoauth2(self, imapobj):
+        if self.oauth2_refresh_token is None \
+                and self.oauth2_access_token is None:
+            return False
+
         imapobj.authenticate('XOAUTH2', self.__xoauth2handler)
         return True
 
@@ -527,6 +552,8 @@ class IMAPServer(object):
                 elif self.usessl:
                     self.ui.connecting(
                         self.repos.getname(), self.hostname, self.port)
+                    self.ui.debug('imap', "%s: level '%s', version '%s'"%
+                        (self.repos.getname(), self.tlslevel, self.sslversion))
                     imapobj = imaplibutil.WrappedIMAP4_SSL(
                         host=self.hostname,
                         port=self.port,
@@ -617,7 +644,8 @@ class IMAPServer(object):
                 if self.port != 993:
                     reason = "Could not connect via SSL to host '%s' and non-s"\
                         "tandard ssl port %d configured. Make sure you connect"\
-                        " to the correct port."% (self.hostname, self.port)
+                        " to the correct port. Got: %s"% (
+                            self.hostname, self.port, e)
                 else:
                     reason = "Unknown SSL protocol connecting to host '%s' for "\
                          "repository '%s'. OpenSSL responded:\n%s"\
@@ -677,8 +705,7 @@ class IMAPServer(object):
             self.assignedconnections = []
             self.availableconnections = []
             self.lastowner = {}
-            # reset kerberos state
-            self.gss_step = self.GSS_STATE_STEP
+            # reset GSSAPI state
             self.gss_vc = None
             self.gssapi = False
 
@@ -794,13 +821,14 @@ class IdleThread(object):
         localrepos = account.localrepos
         remoterepos = account.remoterepos
         statusrepos = account.statusrepos
-        remotefolder = remoterepos.getfolder(self.folder)
+        remotefolder = remoterepos.getfolder(self.folder, decode=False)
 
-        hook = account.getconf('presynchook', '')
-        account.callhook(hook)
+        hook_env = {
+            'OIMAP_ACCOUNT_NAME': account.getname(),
+        }
+        account.callhook('presynchook', hook_env)
         offlineimap.accounts.syncfolder(account, remotefolder, quick=False)
-        hook = account.getconf('postsynchook', '')
-        account.callhook(hook)
+        account.callhook('postsynchook', hook_env)
 
         ui = getglobalui()
         ui.unregisterthread(currentThread()) #syncfolder registered the thread

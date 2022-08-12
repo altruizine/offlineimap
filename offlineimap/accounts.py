@@ -15,7 +15,7 @@
 #    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 from subprocess import Popen, PIPE
-from threading import Event
+from threading import Event, Lock
 import os
 import time
 from sys import exc_info
@@ -29,11 +29,17 @@ from offlineimap.ui import getglobalui
 from offlineimap.threadutil import InstanceLimitedThread
 
 FOLDER_NAMESPACE = 'LIMITED_FOLDER_'
+# Key: account name, Value: Dict of Key: remotefolder name, Value: lock.
+SYNC_MUTEXES = {}
+SYNC_MUTEXES_LOCK = Lock()
 
 try:
-    import fcntl
+    import portalocker
 except:
-    pass # Ok if this fails, we can do without.
+    try:
+        import fcntl
+    except:
+        pass # Ok if this fails, we can do without.
 
 # FIXME: spaghetti code alert!
 def getaccountlist(customconfig):
@@ -66,6 +72,8 @@ class Account(CustomConfig.ConfigHelperMixin):
         self.name = name
         self.metadatadir = config.getmetadatadir()
         self.localeval = config.getlocaleval()
+        # Store utf-8 support as a property of Account object
+        self.utf_8_support = self.getconfboolean('utf8foldernames', False)
         # Current :mod:`offlineimap.ui`, can be used for logging:
         self.ui = getglobalui()
         self.refreshperiod = self.getconffloat('autorefresh', 0.0)
@@ -227,10 +235,13 @@ class SyncableAccount(Account):
 
         self._lockfd = open(self._lockfilepath, 'w')
         try:
-            fcntl.lockf(self._lockfd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+            portalocker.lock(self._lockfd, portalocker.LOCK_EX)
         except NameError:
-            #fcntl not available (Windows), disable file locking... :(
-            pass
+            # portalocker not available for Windows.
+            try:
+                fcntl.lockf(self._lockfd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except NameError:
+                pass # fnctl not available, disable file locking... :(
         except IOError:
             self._lockfd.close()
             six.reraise(OfflineImapError,
@@ -245,6 +256,10 @@ class SyncableAccount(Account):
 
         #If we own the lock file, delete it
         if self._lockfd and not self._lockfd.closed:
+            try:
+                portalocker.unlock(self._lockfd)
+            except NameError:
+                pass
             self._lockfd.close()
             try:
                 os.unlink(self._lockfilepath)
@@ -306,6 +321,9 @@ class SyncableAccount(Account):
             remotefolder.getvisiblename().
             replace(self.remoterepos.getsep(), self.localrepos.getsep()))
 
+
+    # The syncrunner will loop on this method. This means it is called more than
+    # once during the run.
     def __sync(self):
         """Synchronize the account once, then return.
 
@@ -315,8 +333,20 @@ class SyncableAccount(Account):
 
         folderthreads = []
 
-        hook = self.getconf('presynchook', '')
-        self.callhook(hook)
+        hook_env = {
+            'OIMAP_ACCOUNT_NAME': self.getname(),
+        }
+
+        self.callhook('presynchook', hook_env)
+
+        if self.utf_8_support and self.remoterepos.getdecodefoldernames():
+            raise OfflineImapError("Configuration mismatch in account " +
+                        "'%s'. "% self.getname() +
+                        "\nAccount setting 'utf8foldernames' and repository " +
+                        "setting 'decodefoldernames'\nmay not be used at the " +
+                        "same time. This account has not been synchronized.\n" +
+                        "Please check the configuration and documentation.",
+                    OfflineImapError.ERROR.REPO)
 
         quickconfig = self.getconfint('quick', 0)
         if quickconfig < 0:
@@ -332,6 +362,7 @@ class SyncableAccount(Account):
             quick = False
 
         try:
+            startedThread = False
             remoterepos = self.remoterepos
             localrepos = self.localrepos
             statusrepos = self.statusrepos
@@ -354,7 +385,7 @@ class SyncableAccount(Account):
 
                 if not remotefolder.sync_this:
                     self.ui.debug('', "Not syncing filtered folder '%s'"
-                                  "[%s]"% (remotefolder, remoterepos))
+                                  "[%s]"% (remotefolder.getname(), remoterepos))
                     continue # Ignore filtered folder.
 
                 # The remote folder names must not have the local sep char in
@@ -372,7 +403,7 @@ class SyncableAccount(Account):
                 localfolder = self.get_local_folder(remotefolder)
                 if not localfolder.sync_this:
                     self.ui.debug('', "Not syncing filtered folder '%s'"
-                                 "[%s]"% (localfolder, localfolder.repository))
+                                 "[%s]"% (localfolder.getname(), localfolder.repository))
                     continue # Ignore filtered folder.
 
                 if not globals.options.singlethreading:
@@ -388,10 +419,15 @@ class SyncableAccount(Account):
                     folderthreads.append(thread)
                 else:
                     syncfolder(self, remotefolder, quick)
+                startedThread = True
             # Wait for all threads to finish.
             for thr in folderthreads:
                 thr.join()
-            mbnames.writeIntermediateFile(self.name) # Write out mailbox names.
+            if startedThread is True:
+                mbnames.writeIntermediateFile(self.name) # Write out mailbox names.
+            else:
+                msg = "Account {}: no folder to sync (folderfilter issue?)".format(self)
+                raise OfflineImapError(msg, OfflineImapError.ERROR.REPO)
             localrepos.forgetfolders()
             remoterepos.forgetfolders()
         except:
@@ -405,20 +441,23 @@ class SyncableAccount(Account):
             localrepos.holdordropconnections()
             remoterepos.holdordropconnections()
 
-        hook = self.getconf('postsynchook', '')
-        self.callhook(hook)
+        self.callhook('postsynchook', hook_env)
 
-    def callhook(self, cmd):
+    def callhook(self, name, env={}):
         # Check for CTRL-C or SIGTERM and run postsynchook.
         if Account.abort_NOW_signal.is_set():
             return
+        cmd = self.getconf(name, '')
         if not cmd:
             return
         try:
             self.ui.callhook("Calling hook: " + cmd)
             if self.dryrun:
                 return
-            p = Popen(cmd, shell=True,
+            env = env.copy()
+            env.update(os.environ)
+            env['OIMAP_HOOK_NAME'] = name
+            p = Popen(cmd, shell=True, env=env,
                       stdin=PIPE, stdout=PIPE, stderr=PIPE,
                       close_fds=True)
             r = p.communicate()
@@ -430,11 +469,35 @@ class SyncableAccount(Account):
             self.ui.error(e, exc_info()[2], msg="Calling hook")
 
 
+#XXX: This function should likely be refactored. This should not be passed the
+# account instance.
 def syncfolder(account, remotefolder, quick):
     """Synchronizes given remote folder for the specified account.
 
-    Filtered folders on the remote side will not invoke this function. However,
-    this might be called in a concurrently."""
+    Filtered folders on the remote side will not invoke this function.
+
+    When called in concurrently for the same localfolder, syncs are
+    serialized."""
+
+    def acquire_mutex():
+        account_name = account.getname()
+        localfolder_name = localfolder.getfullname()
+
+        with SYNC_MUTEXES_LOCK:
+            if SYNC_MUTEXES.get(account_name) is None:
+                SYNC_MUTEXES[account_name] = {}
+            # The localfolder full name is good to uniquely identify the sync
+            # transaction.
+            if SYNC_MUTEXES[account_name].get(localfolder_name) is None:
+                #XXX: This lock could be an external file lock so we can remove
+                # the lock at the account level.
+                SYNC_MUTEXES[account_name][localfolder_name] = Lock()
+
+        # Acquire the lock.
+        SYNC_MUTEXES[account_name][localfolder_name].acquire()
+
+    def release_mutex():
+        SYNC_MUTEXES[account.getname()][localfolder.getfullname()].release()
 
     def check_uid_validity():
         # If either the local or the status folder has messages and
@@ -459,23 +522,30 @@ def syncfolder(account, remotefolder, quick):
     def cachemessagelists_upto_date(date):
         """Returns messages with uid > min(uids of messages newer than date)."""
 
-        # Warning: this makes sense only if the cached list is empty.
-        localfolder.cachemessagelist(min_date=date)
-        check_uid_validity()
-        # Local messagelist had date restriction applied already. Restrict
-        # sync to messages with UIDs >= min_uid from this list.
-        #
-        # Local messagelist might contain new messages (with uid's < 0).
-        positive_uids = [uid for uid in localfolder.getmessageuidlist() if uid > 0]
-        if len(positive_uids) > 0:
-            remotefolder.cachemessagelist(min_uid=min(positive_uids))
+        remotefolder.cachemessagelist(
+            min_date=time.gmtime(time.mktime(date) + 24*60*60))
+        uids = remotefolder.getmessageuidlist()
+        localfolder.dropmessagelistcache()
+        if len(uids) > 0:
+            # Reload the remote message list from min_uid. This avoid issues for
+            # old messages, which has been added from local on any previous run
+            # (IOW, message is older than maxage _and_ has high enough UID).
+            remotefolder.dropmessagelistcache()
+            remotefolder.cachemessagelist(min_uid=min(uids))
+            localfolder.cachemessagelist(min_uid=min(uids))
         else:
-            # No messages with UID > 0 in range in localfolder.
-            # date restriction was applied with respect to local dates but
-            # remote folder timezone might be different from local, so be
-            # safe and make sure the range isn't bigger than in local.
-            remotefolder.cachemessagelist(
-                min_date=time.gmtime(time.mktime(date) + 24*60*60))
+            # Remote folder UIDs list is empty for the given range. We still
+            # might have valid local UIDs for this range (e.g.: new local
+            # emails).
+            localfolder.cachemessagelist(min_date=date)
+            uids = localfolder.getmessageuidlist()
+            # Take care to only consider positive uids. Negative UIDs might be
+            # present due to new emails.
+            uids = [uid for uid in uids if uid > 0]
+            if len(uids) > 0:
+                # Update the remote cache list for this new min(uids).
+                remotefolder.dropmessagelistcache()
+                remotefolder.cachemessagelist(min_uid=min(uids))
 
     def cachemessagelists_startdate(new, partial, date):
         """Retrieve messagelists when startdate has been set for
@@ -528,8 +598,8 @@ def syncfolder(account, remotefolder, quick):
         # Load local folder.
         localfolder = account.get_local_folder(remotefolder)
 
-        localfolder.mutex.acquire()
-        remotefolder.mutex.acquire()
+        # Acquire the mutex to start syncing.
+        acquire_mutex()
 
         # Add the folder to the mbnames mailboxes.
         mbnames.add(account.name, localrepos.getlocalroot(),
@@ -619,5 +689,5 @@ def syncfolder(account, remotefolder, quick):
             if folder in locals():
                 locals()[folder].dropmessagelistcache()
         statusfolder.closefiles()
-        remotefolder.mutex.release()
-        localfolder.mutex.release()
+        # Release the mutex of this sync transaction.
+        release_mutex()

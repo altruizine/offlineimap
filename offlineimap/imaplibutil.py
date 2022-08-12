@@ -19,11 +19,12 @@ import fcntl
 import time
 import subprocess
 import threading
+import rfc6555
 import socket
 import errno
 import zlib
 from sys import exc_info
-from hashlib import sha1
+from hashlib import sha512, sha384, sha256, sha224, sha1
 
 import six
 
@@ -78,8 +79,15 @@ class UsefulIMAPMixIn(object):
     def open_socket(self):
         """open_socket()
         Open socket choosing first address family available."""
+        if self.af == socket.AF_UNSPEC:
+            # happy-eyeballs!
+            return rfc6555.create_connection((self.host, self.port))
+        else:
+            return self._open_socket_for_af(self.af)
+
+    def _open_socket_for_af(self, af):
         msg = (-1, 'could not open socket')
-        for res in socket.getaddrinfo(self.host, self.port, self.af, socket.SOCK_STREAM):
+        for res in socket.getaddrinfo(self.host, self.port, af, socket.SOCK_STREAM):
             af, socktype, proto, canonname, sa = res
             try:
                 # use socket of our own, possiblly socksified socket.
@@ -124,7 +132,7 @@ class IMAP4_Tunnel(UsefulIMAPMixIn, IMAP4):
         """The tunnelcmd comes in on host!"""
 
         self.host = host
-        self.process = subprocess.Popen(host, shell=True, close_fds=True,
+        self.process = subprocess.Popen('exec %s'%host, shell=True, close_fds=True,
                         stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         (self.outfd, self.infd) = (self.process.stdin, self.process.stdout)
         # imaplib2 polls on this fd
@@ -201,15 +209,18 @@ class WrappedIMAP4_SSL(UsefulIMAPMixIn, IMAP4_SSL):
               "having SSL helps nothing.", OfflineImapError.ERROR.REPO)
         super(WrappedIMAP4_SSL, self).open(host, port)
         if self._fingerprint:
+            server_cert = self.sock.getpeercert(True)
+            hashes = sha512, sha384, sha256, sha224, sha1
+            server_fingerprints = [hash(server_cert).hexdigest() for hash in hashes]
             # compare fingerprints
-            fingerprint = sha1(self.sock.getpeercert(True)).hexdigest()
-            if fingerprint not in self._fingerprint:
-                raise OfflineImapError("Server SSL fingerprint '%s' "
+            matches = [(server_fingerprint in self._fingerprint) for server_fingerprint in server_fingerprints]
+            if not any(matches):
+                raise OfflineImapError("Server SSL fingerprint(s) '%s' "
                       "for hostname '%s' "
                       "does not match configured fingerprint(s) %s.  "
                       "Please verify and set 'cert_fingerprint' accordingly "
                       "if not set yet."%
-                      (fingerprint, host, self._fingerprint),
+                      (zip([hash.__name__ for hash in hashes], server_fingerprints), host, self._fingerprint),
                       OfflineImapError.ERROR.REPO)
 
 

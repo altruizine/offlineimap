@@ -1,4 +1,4 @@
-# Copyright 2014-2006 Eygene A. Ryabinkin & contributors.
+# Copyright 2006-2018 Eygene A. Ryabinkin & contributors.
 #
 # Module that supports distribution-specific functions.
 
@@ -20,6 +20,8 @@ __DEF_OS_LOCATIONS = {
     'darwin': [
       # MacPorts, port curl-ca-bundle
       '/opt/local/share/curl/curl-ca-bundle.crt',
+      # homebrew, package openssl
+      '/usr/local/etc/openssl/cert.pem',
     ],
     'linux-ubuntu': '/etc/ssl/certs/ca-certificates.crt',
     'linux-debian': '/etc/ssl/certs/ca-certificates.crt',
@@ -28,6 +30,7 @@ __DEF_OS_LOCATIONS = {
     'linux-redhat': '/etc/pki/tls/certs/ca-bundle.crt',
     'linux-suse': '/etc/ssl/ca-bundle.pem',
     'linux-opensuse': '/etc/ssl/ca-bundle.pem',
+    'linux-arch': '/etc/ssl/certs/ca-certificates.crt',
 }
 
 
@@ -47,7 +50,9 @@ def get_os_name():
     if OS.startswith('linux'):
         DISTRO = distro.linux_distribution()[0]
         if DISTRO:
-          OS = OS + "-%s" % DISTRO.split()[0].lower()
+            OS = OS + "-%s" % DISTRO.split()[0].lower()
+        if os.path.exists('/etc/arch-release'):
+            OS = "linux-arch"
 
     return OS
 

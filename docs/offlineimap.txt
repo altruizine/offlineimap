@@ -4,7 +4,7 @@ offlineimap(1)
 
 NAME
 ----
-offlineimap - Synchronize mailboxes and Maildirs
+offlineimap - Synchronize mailboxes and Maildirs both ways or one either way.
 
 SYNOPSIS
 --------
@@ -18,7 +18,7 @@ Synchronize the accounts configured in the configuration file via IMAP. Each
 account has two sides.  One of the side must be an IMAP server.  The other side
 can either be a Maildir or another IMAP server.
 
-Python 3 is supported while still EXPERIMENTAL.
+Works with Python 2.
 
 
 OPTIONS
@@ -160,9 +160,10 @@ blinkenlights, machineui.
 --delete-folder::
   Delete a folder on the remote repository.
 +
-Only one account must be specified/configured for this feature to work. The
-folder name must be provided in IMAP encoding with the remote separators (likely
-'/'). E.g.: "Remote/folder/name".
+Only one account must be specified/configured for this feature to work or you
+must provide one account with -a. The folder name must be provided with the
+remote separators (likely '/') in UTF-8 if utf8foldernames is enabled or in IMAP
+otherwise. E.g.: "Remote/folder/name".
 
 
 --migrate-fmd5-using-nametrans::
@@ -225,17 +226,17 @@ done this yet, do it :). See the 'folderfilter' section in 'offlineimap.conf'.
 OfflineImap caches the state of the synchronisation to e.g. be able to determine
 if a mail has been added or deleted on either side.
 +
-The historical status cache is a plain text file that writes out the complete
-file for each single new message (or even changed flag) to a temporary file. If
-you have plenty of files in a folder, this is a few hundred kilo to megabytes
-for each mail and is bound to make things slow. The latest default status cache
-is sqlite. This saves plenty of disk activity. The sqlite engine and the Python
-sqlite module must be installed. Enable the 'status_backend = plain' setting in
-'offlineimap.conf' for legacy compatibility with versions prior to '6.4.0'.
+The historical status cache was a plain text file that was writing out the
+complete file for each single new message (or even changed flag) to a temporary
+file. If there was plenty of files in a folder this was bound to make things
+slow. The latest status cache is sqlite. This saves plenty of disk activity.
 +
-If you switch the backend from plain to sqlite, you may want to delete the old
-cache directory in '<metadata>/Account-<account>/LocalStatus' manually (the
-sqlite cache stands in the 'LocalStatus-sqlite' folder).
+The historical plain status cache is not supported anymore but migrating from a
+very old installation using the plain text cache is still supported.  In this
+case, you may want to delete the old cache directory in
+'<metadata>/Account-<account>/LocalStatus' manually (the sqlite cache stands in
+the 'LocalStatus-sqlite' folder). First, make sure you have run the new version
+of offlineimap for all your accounts so that the status cache was migrated.
 
 4. Use quick sync.
 +

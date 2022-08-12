@@ -5,7 +5,7 @@
 # IMAP synchronization
 # Module: installer
 # COPYRIGHT #
-# Copyright (C) 2002 - 2006 John Goerzen
+# Copyright (C) 2002 - 2020 John Goerzen & contributors
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -19,13 +19,17 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 import os
 from distutils.core import setup, Command
-import offlineimap
 import logging
-from test.OLItest import TextTestRunner, TestLoader, OLITestLib
+
+from os import path
+here = path.abspath(path.dirname(__file__))
+
+# load __version__, __doc__, __author_, ...
+exec(open(path.join(here, 'offlineimap', 'version.py')).read())
 
 class TestCommand(Command):
     """runs the OLI testsuite"""
@@ -42,6 +46,11 @@ class TestCommand(Command):
         pass
 
     def run(self):
+        # Import the test classes here instead of at the begin of the module
+        # to avoid an implicit dependency of the 'offlineimap' module
+        # in the setup.py (which may run *before* offlineimap is installed)
+        from test.OLItest import TextTestRunner, TestLoader, OLITestLib
+
         logging.basicConfig(format='%(message)s')
         # set credentials and OfflineImap command to be executed:
         OLITestLib(cred_file='./test/credentials.conf', cmd='./offlineimap.py')
@@ -49,19 +58,25 @@ class TestCommand(Command):
         #TODO: failfast does not seem to exist in python2.6?
         TextTestRunner(verbosity=2,failfast=True).run(suite)
 
+reqs = [
+    'six',
+    'rfc6555'
+    ]
 
 setup(name = "offlineimap",
-      version = offlineimap.__version__,
-      description = offlineimap.__description__,
-      author = offlineimap.__author__,
-      author_email = offlineimap.__author_email__,
-      url = offlineimap.__homepage__,
+      version = __version__,
+      description = __description__,
+      long_description = __description__,
+      author = __author__,
+      author_email = __author_email__,
+      url = __homepage__,
       packages = ['offlineimap', 'offlineimap.folder',
                   'offlineimap.repository', 'offlineimap.ui',
                   'offlineimap.utils'],
       scripts = ['bin/offlineimap'],
-      license = offlineimap.__copyright__ + \
+      license = __copyright__ + \
                 ", Licensed under the GPL version 2",
-      cmdclass = { 'test': TestCommand}
+      cmdclass = { 'test': TestCommand},
+      install_requires = reqs
 )
 

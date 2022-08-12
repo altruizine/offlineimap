@@ -15,6 +15,774 @@ Note to mainainers:
 * The following excerpt is only usefull when rendered in the website.
 {:toc}
 
+### OfflineIMAP v7.3.4 (2021-08-03)
+
+#### Notes
+
+The release is likely the last minor release. This project will be maintained
+for minor bug fixes only.
+
+In this version we've backported patches from the offlineimap3 project. There's
+no new features. Users should try this fork. The official project is there and
+is maintained by Rodolfo:
+
+  https://github.com/OfflineIMAP/offlineimap3
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Nicolas Sebrecht (5)
+- Rodolfo García Peñas (kix) (4)
+- Martin Di Paola (2)
+- Reto Schnyder (1)
+
+
+#### Fixes
+
+- folder: IMAP: fix issue when the response of searchforheaders is the same UID multiple times. [Nicolas Sebrecht]
+- Fix hooks for IDLE sync. [Reto Schnyder]
+- Changed wrong comparison equal. [Rodolfo García Peñas (kix)]
+- Comparison error. [Rodolfo García Peñas (kix)]
+- remove outdated links to travis. [Nicolas Sebrecht]
+- ui init is lintian clean. [Rodolfo García Peñas (kix)]
+- Require the minimal dependencies in python package. [Martin Di Paola]
+
+#### Changes
+
+- README: update regarding the offlineimap3 fork. [Nicolas Sebrecht]
+- redirect the users to offlineimap3. [Nicolas Sebrecht]
+- threadutil imports not used. [Rodolfo García Peñas (kix)]
+- Move out pkg attributes from __init__.py. [Martin Di Paola]
+
+
+### OfflineIMAP v7.3.3 (2020-04-11)
+
+#### Notes
+
+Here is a small release after nearly 4 months of slow moves. Still, the patches
+are very usefull for some use cases. Thanks to the contributors!
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Chris Coleman (1)
+- Frank LENORMAND (1)
+- Herton R. Krzesinski (1)
+- martin f. krafft (1)
+
+
+#### Features
+
+- export env. variables when running account hooks. [Frank LENORMAND]
+
+#### Fixes
+
+- Fix stale gss api authentication security context. [Herton R. Krzesinski]
+- Handle [ALREADYEXISTS] and Mailbox already exists!. [Chris Coleman]
+
+#### Changes
+
+- exec() the tunnel command. [martin f. krafft]
+
+
+
+
+### OfflineIMAP v7.3.2 (2019-12-17)
+
+#### Notes
+
+This is a very small bug fix release.
+
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Jaroslav Lichtblau (1)
+- Nicolas Sebrecht (1)
+
+
+#### Fixes
+
+- Revert "fix check for unsupported sep character". [Nicolas Sebrecht]
+- Fixing the Arch Linux name. [Jaroslav Lichtblau]
+
+
+### OfflineIMAP v7.3.1 (2019-12-15)
+
+#### Notes
+
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Nicolas Sebrecht (5)
+- Chris Coleman (1)
+- Chris Coutinho (1)
+- Jess (1)
+
+
+#### Features
+
+- Additional address for sysloghandler to handle mac. [Chris Coutinho]
+- Added financial contributors to the README. [Jess]
+- Introduce FUNDING.yml for opencollective. [Nicolas Sebrecht]
+
+
+#### Fixes
+
+- Fix check for unsupported sep character. [Nicolas Sebrecht]
+- Contrib: use yaml.safe_load() instead of load(). [Nicolas Sebrecht]
+- Ensure python2 in the release workflow. [Nicolas Sebrecht]
+- Make docs: ensure py2 when running sphinx. [Nicolas Sebrecht]
+
+
+#### Changes
+
+- Update README.md. [Chris Coleman]
+
+
+### OfflineIMAP v7.3.0 (2019-08-19)
+
+#### Notes
+
+Here comes a new release.
+
+The upstream imaplib2 project is discontinued. That's why I've decided to take
+over the maintenance of imaplib2 for offlineimap.
+
+For the use of offlineimap I've applied the pending PRs from imaplib2.  I have
+applied another change sent to offlineimap (see OfflineIMAP/offlineimap#623).
+
+However, there are 3 important limitations:
+
+- I intend to maintain imaplib2 for offlineimap only. Everything will take place
+  in the offlineimap project. I'll neither package imaplib2 nor maintain any
+  "official" repository dedicated to imaplib2. If you want imaplib2 but not
+  offlineimap, you should extract the file `offlineimap/bundled_imaplib2.py` from
+  the offlineimap repository. Please, send your patches for imaplib2.py to the
+  offlineimap project directly.
+
+- Starting from imaplib2 v2.100 (tagged: imaplib2-v2.100) I'm taking the patches
+  in the lazy mode. This means that I won't make deep checks/tests of the
+  changes.  Hence, the quality and the stability might become a bit more
+  fluctuating. For more stability, you might like to only consider the imaplib2
+  versions released with the stable versions of offlineimap. Don't expect
+  changelogs dedicated to imaplib2. They will be part of the offlineimap
+  changelogs.
+
+- All of this only applies to the py2 version of imaplib2. Sadly, offlineimap
+  has few chances to be ported on py3 so I don't aim to maintain the py3 version
+  of imaplib2.
+
+
+In this release, offlineimap is learning Happy Eyeballs.
+
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Nicolas Sebrecht (4)
+- Ben Cotterell (1)
+- Dario Maiocchi (1)
+- Ilias Tsitsimpis (1)
+- Julien Cristau (1)
+- Olivier Mehani (1)
+
+
+#### Features
+
+- Implement Happy Eyeballs. [Olivier Mehani]
+- imaplib2 v2.101. [Nicolas Sebrecht]
+- imaplib2 v2.100. [Nicolas Sebrecht]
+
+#### Changes
+
+- Update readme to give an hint about Linux distros. [Dario Maiocchi]
+- travis: remove python3.6. [Nicolas Sebrecht]
+- README: add required dependency to rfc6555. [Nicolas Sebrecht]
+
+#### imaplib2
+
+- Do not use TIMEOUT_MAX for Condition.wait(). [Ilias Tsitsimpis]
+- Use SSLContext if available so we send SNI. [Julien Cristau]
+- Don't expect trailing space on command completion. [Ben Cotterell]
+
+
+### OfflineIMAP v7.2.4 (2019-06-08)
+
+#### Notes
+
+This release introduces mkdir -p alike folder creation and fixes cygwin support
+in Windows.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Nicolas Sebrecht (4)
+- kimim (2)
+- Jelmer Vernooĳ (1)
+- Kyle Altendorf (1)
+
+
+#### Features
+
+- mkdir -p alike folder creation. [Kyle Altendorf]
+
+#### Fixes
+
+- Use portable locker to support cygwin in Windows. [kimim]
+- contrib/release.py: don't break if sphinx-build is missing. [Nicolas Sebrecht]
+
+#### Changes
+
+- Update FSF postal address. [Jelmer Vernooĳ]
+- repository/IMAP: update copyright header date. [Nicolas Sebrecht]
+- PULL_REQUEST_TEMPLATE: add space between brackets to enable the edition in the gui. [Nicolas Sebrecht]
+
+
+### OfflineIMAP v7.2.3 (2019-02-17)
+
+#### Notes
+
+A tiny release for one minor bug fix.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Mart Lubbers (1)
+
+
+#### Fixes
+
+- add checks in curses ui for small windows. [Mart Lubbers]
+
+
+### OfflineIMAP v7.2.2 (2018-12-22)
+
+#### Notes
+
+With this release offlineimap can renew the token for OAUTH2. There is better
+integration for ArchLinux and OSX. SSL configuration options are more
+consistent.
+
+There are bug fixes about maxage and GSSAPI.
+
+The imaplib2 library looks discontinued. I wonder we'll have no other choice
+than maintaining our own fork.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+
+#### Authors
+
+- Nicolas Sebrecht (5)
+- Philippe Loctaux (4)
+- Benedikt Heine (2)
+- Carnë Draug (2)
+- Frode Aannevik (1)
+- Robbie Harwood (1)
+
+
+#### Features
+
+- 2890dec Added ssl certfile on osx for openssl pacakge on homebrew. [Philippe Loctaux]
+- 761e10e Add Archlinux to list of supported distros. [Philippe Loctaux]
+
+#### Fixes
+
+- 8692799 Fix expired oauth2_access_token. [Frode Aannevik]
+- 096aa07 Handle empty token with complete GSSAPI context. [Robbie Harwood]
+- a51064e maxage: always compute the remote cache list for min_uid. [Nicolas Sebrecht]
+- 698ec64 offlineimap.conf: minor fixes. [Nicolas Sebrecht]
+- af3a35a offlineimap/utilis/distro.py: indentation fix. [Philippe Loctaux]
+- d3ba837 Fix typo in exception message. [Benedikt Heine]
+- c9005cd Check if username is provided before trying plain authentication.. [Carnë Draug]
+
+#### Changes
+
+- 5f9474e Print username instead of accountname when asking for password. [Carnë Draug]
+- ce9a198 Chain tls_level and ssl_version only if ssl is enabled. [Benedikt Heine]
+- 6ef5937 docs/website-doc.sh: minor improvements in comments of versions.yml. [Nicolas Sebrecht]
+- 4544bb1 contrib/release.py: minor UI improvement. [Nicolas Sebrecht]
+- d930125 fix dates in copyright lines. [Nicolas Sebrecht]
+
+
+### OfflineIMAP v7.2.1 (2018-06-16)
+
+#### Notes
+
+This new version introduces interesting features. The fingerprints now accepts
+hashes in sha224, sha256, sha384 and sha512 to improve the compatibility with
+IMAP servers.
+
+There's a new script in ./contrib to store passwords with GPG.
+
+The new GSSAPI library for kerberos gets a fix about authentication. Gmail
+labels can now have parenthesis and the hostname can have path separators in
+theirs names.
+
+There's a lot of other minors improvements to make offlineimap better
+(in the documentation, UI, configuration file and the code).
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+Thanks to all the contributors. A lot of patches are first time contributions to
+this project. This is very pleasant.
+
+Special thanks to Ilias Tsitsimpis, Eygene Ryabinkin, Chris Coleman our long
+time contributors involved in this release and Sebastian Spaeth who is still
+paying for the domain name!
+
+
+#### Authors
+
+- Nicolas Sebrecht (9)
+- velleto (6)
+- Chris Coleman (1)
+- Edgar HIPP (1)
+- Eygene Ryabinkin (1)
+- Lorenzo (1)
+- Michael Billington (1)
+- Robbie Harwood (1)
+
+
+#### Features
+
+- Script to store passwords in a file with GPG or using OSX's secure keychain. [Lorenzo]
+- Added support for sha512, sha384, sha256, sha224 hashing algorithms to calculate server certificate fingerprints.. [velleto]
+
+#### Fixes
+
+- Pass username through in GSSAPI connections. [Robbie Harwood]
+- Gmail: allow parenthesis in labels. [Nicolas Sebrecht]
+- Correct typographical errors in offlineimap.conf. [Michael Billington]
+- Create filenames with no path separators in them. [Eygene Ryabinkin]
+
+#### Changes
+
+- imapserver: fix copyright line. [Nicolas Sebrecht]
+- Available hashes added to documentation.. [velleto]
+- Documented the now allowed use of colon separated fingerprints with examples.. [velleto]
+- Allow users to keep colons between each hex pair of server certificate fingerprint in configuration file.. [velleto]
+- Removed uneccessary call of list() on zip() object.. [velleto]
+- Changed the 'exception raised' message, to be more understandable.. [velleto]
+- Make CTRL-C message more clear. [Edgar HIPP]
+- setup: add long_description. [Nicolas Sebrecht]
+- offlineimap.conf: fix comment about gssapi. [Nicolas Sebrecht]
+- Add self to maintainers. Update email address.. [Chris Coleman]
+- Makefile: targz: don't set the abbrev in the archive directory name. [Nicolas Sebrecht]
+- contrib: learn to build website/_uploads. [Nicolas Sebrecht]
+- docs/website-doc.sh: limit the number of exported versions in _data/announces.yml. [Nicolas Sebrecht]
+- Makefile: targz: update files. [Nicolas Sebrecht]
+- Makefile: clean: remove __pycache__ directories. [Nicolas Sebrecht]
+
+
+### OfflineIMAP v7.2.0 (2018-04-07)
+
+#### Notes
+
+The biggest change with this release is the introduction of automated tests;
+thanks to Chris from http://www.espacenetworks.com.
+
+Robbie Hardwood from RedHat switched the GSSAPI dependency from pykerberos to
+python-gssapi because it's more active and has more pleasant interface.
+
+The shebang is fixed back to python2 to fix issues on some environments.
+
+The UI was improved to show both the local and remote foldernames (usefull when
+nametrans is enabled).
+
+Thanks to all the contributors.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+- Remi Locherer
+
+
+#### Authors
+
+- Nicolas Sebrecht (9)
+- Musashi69 (1)
+- Robbie Harwood (1)
+- chris001 (1)
+
+
+#### Features
+
+- Autmomated testing using Travis and CodeCov.io!. [chris001]
+- README: travis: add badge for the next branch. [Nicolas Sebrecht]
+- travis: add notification to gitter room OfflineIMAP/offlineimap. [Nicolas Sebrecht]
+
+#### Fixes
+
+- offlineimap.py: fix shebang to python2. [Nicolas Sebrecht]
+- bin/offlineimap: fix shebang to env python2. [Nicolas Sebrecht]
+
+#### Changes
+
+- Port to python-gssapi from pykerberos. [Robbie Harwood]
+- requirements: add gssapi as optional dependency. [Nicolas Sebrecht]
+- make UI output show local AND remote dirs involved. [Musashi69]
+- maxsyncaccounts: improve documentation. [Nicolas Sebrecht]
+
+
+
+
+### OfflineIMAP v7.1.5 (2018-01-13)
+
+#### Notes
+
+This minor release fixes a bug about maxage failing to upload some emails. Also,
+this introduces the snapcraft.yaml to package offlineimap with this packaging
+system.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+- Remi Locherer
+
+
+#### Authors
+
+- Nicolas Sebrecht (4)
+- Evan Dandrea (1)
+- John Ferlito (1)
+
+
+#### Features
+
+- Initial commit of snapcraft.yaml. [Evan Dandrea]
+
+#### Fixes
+
+- maxage: don't consider negative UIDs when computing min UID. [Nicolas Sebrecht]
+- Add missing space to output string. [John Ferlito]
+
+#### Changes
+
+- folder: IMAP: improve search logging. [Nicolas Sebrecht]
+- no UIDPLUS: improve logging on failures. [Nicolas Sebrecht]
+- github: remove the trick to download the PR. [Nicolas Sebrecht]
+
+
+### OfflineIMAP v7.1.4 (2017-10-29)
+
+#### Notes
+
+Here is a bugfix release for v7.1.3. Two regressions got fixes and the
+--delete-folder CLI option now expects an UTF-8 folder name when utf8foldernames
+is enabled.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+
+#### Authors
+
+- Nicolas Sebrecht (5)
+- Thomas Merkel (1)
+
+#### Fixes
+
+- utf8foldernames: fix missing decode argument. [Nicolas Sebrecht]
+- Fix: if any tunnel (preauth_tunnel or transport_tunnel) the hostname should not be required. [Thomas Merkel]
+
+#### Changes
+
+- utf8foldernames: support --delete-folder with UTF-8 folder name. [Nicolas Sebrecht]
+- contrib/release.py improvements
+
+
+### OfflineIMAP v7.1.3 (2017-10-08)
+
+#### Notes
+
+This release introduces a new experimental utf8foldernames configuration option.
+
+We already had the "tricky" decodefoldernames which is now deprecated. The new
+code is the correct implementation for this feature. The changes are neat and
+rather small. All the users having decodefoldernames are requested to move to
+utf8foldernames. This requires to update almost all the functions like
+nametrans, folderfilter, etc, because they work on the UTF-8 encoding. See the
+documentation for more. Thank you Urs Liska for this contribution!
+
+In the long run, the idea is to:
+
+1. Remove decodefoldernames in favour of utf8foldernames.
+2. Promote utf8foldernames up to stable.
+3. Turn utf8foldernames on by default.
+
+Currently, folders with non-ASCII characters in their name have to be fully
+re-downloaded. So, there's a bit more work to be done to have (3) and maybe (2).
+
+Also, this release includes a fix about remotehost and transporttunnel that
+would require some testing. Thanks Thomas Merkel!
+
+There are documentation improvements, improved errors and minor code cleanups,
+too.
+
+This release was tested by:
+
+- Nicolas Sebrecht
+- Remi Locherer
+
+
+#### Authors
+
+- Nicolas Sebrecht (11)
+- Urs Liska (8)
+- Thomas Merkel (1)
+
+#### Features
+
+- utf8: implement utf8foldernames option. [Urs Liska]
+- utf8: document new feature, deprecate old one. [Urs Liska]
+
+#### Fixes
+
+- remotehost should not be required if transporttunnel is used. [Thomas Merkel]
+- accounts: error out when no folder to sync. [Nicolas Sebrecht]
+- sqlite: provide better message error for insert. [Nicolas Sebrecht]
+- folder: Gmail: fix copyright header. [Nicolas Sebrecht]
+
+#### Changes
+
+- man: remove mention of experimental support for python 3. [Nicolas Sebrecht]
+- man: mention the supported directions of the syncs. [Nicolas Sebrecht]
+- folder: Gmail: remove dead code. [Nicolas Sebrecht]
+- upcoming.py: get header template from external file. [Nicolas Sebrecht]
+- upcoming.py: display a message with the filename once written. [Nicolas Sebrecht]
+- contrib/helpers: sort testers by name. [Nicolas Sebrecht]
+- Remove some unnecessary whitespace (in existing code). [Urs Liska]
+- MAINTAINERS: Rainer is not currently active. [Nicolas Sebrecht]
+
+
+### OfflineIMAP v7.1.2 (2017-07-10)
+
+#### Notes
+
+This release introduces better Davmail support, better reliability when in
+IMAP/IMAP mode, better output on some errors, and minor fixes. The provided
+systemd files are improved.
+
+The imaplib2 requirement is now v2.57.
+
+Remi Locherer is joining our tester team. Great!
+
+Starting with this release, the feedbacks from the testers are recorded in the
+release notes, the git logs and the Changelog. Thanks to all of them for
+improving the releases.
+
+This release was tested by:
+
+- benutzer193
+- Nicolas Sebrecht
+- Remi Locherer
+
+#### Authors
+
+- Nicolas Sebrecht (20)
+- Hugo Osvaldo Barrera (5)
+- Alvaro Pereyra (1)
+- benutzer193 (1)
+
+#### Features
+
+- contrib/release.py: consider positive feedbacks from testers. [Nicolas Sebrecht]
+- Introduce the github CODEOWNERS file. [Nicolas Sebrecht]
+- IMAP/IMAP: continue to sync if the local side does not return a valid UID on upload. [Nicolas Sebrecht]
+
+#### Fixes
+
+- folder/IMAP: introduce dedicated parsing for davmail (not supporting UIDPLUS). [Nicolas Sebrecht]
+- offlineimap.conf: minor typo fix. [Alvaro Pereyra]
+- Respect systemd conventions for timers. [Hugo Osvaldo Barrera]
+- Use a pre-existing target for systemd services. [Hugo Osvaldo Barrera]
+- Remove invalid systemd setting. [Hugo Osvaldo Barrera]
+- systemd: remove unused watchdog functionality. [benutzer193]
+- gitignore generated css file. [Nicolas Sebrecht]
+- Changelog: fix syntax. [Nicolas Sebrecht]
+
+#### Changes
+
+- Increase imaplib2 requirement from v2.55 to v2.57. [Nicolas Sebrecht]
+- folder/IMAP: improve the warning when we can't parse the returned UID. [Nicolas Sebrecht]
+- Provide more details in error message when SSL fails on non-standard port. [Nicolas Sebrecht]
+- Use basic logger (since systemd picks up stdout). [Hugo Osvaldo Barrera]
+- Explain how to override systemd values. [Hugo Osvaldo Barrera]
+- systemd: add documentation entry in configuration files. [Nicolas Sebrecht]
+- offlineimap.conf: ssl must be disabled to force STARTTLS in some cases. [Nicolas Sebrecht]
+- Advise singlethreadperfolder when offlineimap hangs. [Nicolas Sebrecht]
+- offlineimap.conf: minor improvements. [Nicolas Sebrecht]
+- contrib: more release automation. [Nicolas Sebrecht]
+- MAINTAINERS: Remi Locherer joins the team of testers. [Nicolas Sebrecht]
+- systemd: README: credit Hugo as contributor. [Nicolas Sebrecht]
+
+
+### OfflineIMAP v7.1.1 (2017-05-28)
+
+#### Notes
+
+This release has some interesting fixes, including one for the Blinkenlights UI.
+
+Otherwise, there is no big change since the previous version.
+
+Furthermore, this release was tested by:
+
+- Remi Locherer
+
+#### Authors
+
+- Nicolas Sebrecht (17)
+- Chris Coleman (1)
+- Ilias Tsitsimpis (1)
+- Maximilian Kaul (1)
+- benutzer193 (1)
+- Ævar Arnfjörð Bjarmason (1)
+
+#### Features
+
+- contrib: introduce a tool to produce the "upcoming notes". [Nicolas Sebrecht]
+- contrib: secure HTTPS test internet is connected.. [Chris Coleman]
+- Env info (used by -V and banner): add openssl version. [Nicolas Sebrecht]
+- docs: learn to build html files for the manual pages. [Nicolas Sebrecht]
+
+#### Fixes
+
+- Acquire lock before updating the CursesLogHandler window. [Ilias Tsitsimpis]
+- maxage: use the remote folder first to compute min_uid. [Nicolas Sebrecht]
+- Fix systemd.timer: initialize timer after boot. [benutzer193]
+- XOAUTH2: don't try this authentication method when not configured. [Nicolas Sebrecht]
+- mbnames: don't duplicate entries in autorefresh mode. [Nicolas Sebrecht]
+- docs: update the instructions for creating OAuth projects for GMail. [Ævar Arnfjörð Bjarmason]
+- Fixed typo in doc: tls_1_2 => tls1_2. [Maximilian Kaul]
+- IMAP: UIDPLUS: correctly warn about weird responses from some servers. [Nicolas Sebrecht]
+- website-doc: force copy of the new HTML generated man pages. [Nicolas Sebrecht]
+- Makefile: fix clean target. [Nicolas Sebrecht]
+
+#### Changes
+
+- MAINTAINERS: benutzer193 joins the testers team. [Nicolas Sebrecht]
+- IMAP: UIDPLUS: improve error message on response error for new UID. [Nicolas Sebrecht]
+- Display the imaplib and python versions for each normal run. [Nicolas Sebrecht]
+- imapserver: provide some SSL info while in imap debug mode. [Nicolas Sebrecht]
+- manual: improve the documentation about sqlite migration. [Nicolas Sebrecht]
+- documentation: add entry for faulting folders with Microsoft servers. [Nicolas Sebrecht]
+- website-doc.sh: add hint on API removal. [Nicolas Sebrecht]
+- README: refactorize sections. [Nicolas Sebrecht]
+
+
+
+### OfflineIMAP v7.1.0 (2017-04-16)
+
+#### Notes
+
+The most important change is the removal of the status_backend configuration
+option and that's why we're moving to v7.1.0.
+
+There are other small bug fixes and improvements. However, the codebase didn't
+change much since v7.0.14.
+
+#### Authors
+
+- Nicolas Sebrecht (6)
+- benutzer193 (4)
+- Ilias Tsitsimpis (1)
+
+#### Fixes
+
+- doc: Fix typo in offlineimap.1 man page. [Ilias Tsitsimpis]
+- README: we moved to imaplib2 v2.57. [Nicolas Sebrecht]
+- README: mark porting to py3 as stalled. [Nicolas Sebrecht]
+- folder: UIDMaps: ignore KeyError failure while removing keys. [Nicolas Sebrecht]
+
+#### Changes
+
+- Remove support for the status_backend configuration option. [Nicolas Sebrecht]
+- folder/IMAP: improve handling of "matchinguids" error while searching headers. [Nicolas Sebrecht]
+- Adjust README to systemd service file changes. [benutzer193]
+- Remove oneshot switch from systemd services. [benutzer193]
+- Use oneshot services for systemd timers. [benutzer193]
+- Create systemd oneshot services. [benutzer193]
+- website-doc.sh: versions.yml: set versions in order. [Nicolas Sebrecht]
+
+
+
+### OfflineIMAP v7.0.14 (2017-03-11)
+
+#### Notes
+
+Here is a new small fixup release for the v7.0 series. The first v7.0.0 release
+is near to 8 months old. This v7.0.14 release is more reliable than v6.7.0.3.
+Hence, I'm deprecating the v6.7 series.
+
+Now, you are all enjoined to migrate to v7.0.14. Migrating back to v6.7 is not
+supported so you might like to backup your local maildirs and metadata first.
+
+We will fully remove the legacy text backend driver in near future. The SQLite
+driver proved to be better for both performance and reliability.
+
+With this release we use imaplib2 v2.57 to support some faulting IMAP servers,
+fix a little bug about the backend migration to SQLite and serialize the sync
+processes to prevent from issues when both IDLE and autorefresh are enabled.
+
+Happy sync'ing!
+
+#### Authors
+
+- Nicolas Sebrecht (5)
+- 927589452 (2)
+- Jens Heinrich (1)
+- Stéphane Graber (1)
+
+#### Fixes
+
+- SQLite: avoid concurrent writes on backend migration. [Nicolas Sebrecht]
+- Fix ipv6 configuration handling. [Stéphane Graber]
+- Prevent synchronization of identical folders from multiple threads. [Nicolas Sebrecht]
+
+#### Changes
+
+- Bump from imaplib2 v2.55 to v2.57. [Nicolas Sebrecht]
+- scripts/get-repository.sh: use portable /bin/sh. [Jens Heinrich]
+- MAINTAINERS: add new tester. [Nicolas Sebrecht]
+- scripts/get-repository.sh: use env to call bash. [mailinglists@927589452.de]
+
+
+
 ### OfflineIMAP v7.0.13 (2017-01-27)
 
 #### Notes

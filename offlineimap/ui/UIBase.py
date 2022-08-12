@@ -1,5 +1,5 @@
 # UI base class
-# Copyright (C) 2002-2016 John Goerzen & contributors.
+# Copyright (C) 2002-2018 John Goerzen & contributors.
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -96,8 +96,13 @@ class UIBase(object):
     def setup_sysloghandler(self):
         """Backend specific syslog handler."""
 
+        if sys.platform == 'darwin':
+            address = '/var/run/syslog'
+        else:
+            address = '/dev/log'
+
         # create syslog handler
-        ch = logging.handlers.SysLogHandler('/dev/log')
+        ch = logging.handlers.SysLogHandler(address)
         # create formatter and add it to the handlers
         self.formatter = logging.Formatter("%(message)s")
         ch.setFormatter(self.formatter)
@@ -257,7 +262,7 @@ class UIBase(object):
 
     ################################################## INPUT
 
-    def getpass(self, accountname, config, errmsg = None):
+    def getpass(self, username, config, errmsg = None):
         raise NotImplementedError("Prompting for a password is not supported"
             " in this UI backend.")
 
@@ -396,9 +401,9 @@ class UIBase(object):
     def copyingmessage(self, uid, num, num_to_copy, src, destfolder):
         """Output a log line stating which message we copy."""
 
-        self.logger.info("Copy message UID %s (%d/%d) %s:%s -> %s"% (
+        self.logger.info("Copy message UID %s (%d/%d) %s:%s -> %s:%s"% (
                 uid, num, num_to_copy, src.repository, src,
-                destfolder.repository))
+                destfolder.repository, destfolder))
 
     def deletingmessages(self, uidlist, destlist):
         ds = self.folderlist(destlist)
