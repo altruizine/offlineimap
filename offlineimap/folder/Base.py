@@ -22,6 +22,7 @@ import os.path
 import re
 import time
 from sys import exc_info
+from threading import Lock
 
 from email import policy
 from email.parser import BytesParser
@@ -128,6 +129,8 @@ class BaseFolder:
             self.__syncmessagesto_delete,
             self.__syncmessagesto_flags,
         ]
+
+        self.mutex = Lock()
 
     def getname(self):
         """Returns name"""

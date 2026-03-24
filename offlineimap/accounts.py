@@ -485,6 +485,7 @@ def syncfolder(account, remotefolder, quick):
     def acquire_mutex():
         account_name = account.getname()
         localfolder_name = localfolder.getfullname()
+        remotefolder_name = remotefolder.getfullname()
 
         with SYNC_MUTEXES_LOCK:
             if SYNC_MUTEXES.get(account_name) is None:
@@ -495,12 +496,16 @@ def syncfolder(account, remotefolder, quick):
                 # XXX: This lock could be an external file lock so we can remove
                 # the lock at the account level.
                 SYNC_MUTEXES[account_name][localfolder_name] = Lock()
+            if SYNC_MUTEXES[account_name].get(remotefolder_name) is None:
+                SYNC_MUTEXES[account_name][remotefolder_name] = Lock()
 
         # Acquire the lock.
+        SYNC_MUTEXES[account_name][remotefolder_name].acquire()
         SYNC_MUTEXES[account_name][localfolder_name].acquire()
 
     def release_mutex():
         SYNC_MUTEXES[account.getname()][localfolder.getfullname()].release()
+        SYNC_MUTEXES[account.getname()][remotefolder.getfullname()].release()
 
     def check_uid_validity():
         # If either the local or the status folder has messages and
