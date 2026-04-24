@@ -542,6 +542,14 @@ class IMAPServer:
             self.assignedconnections.append(imapobj)
             self.lastowner[imapobj] = curThread.ident
             self.connectionlock.release()
+
+            try:
+                imapobj.noop()
+            except imapobj.abort:
+                self.ui.warn('Connection %s is dead, dropping' % imapobj.identifier)
+                self.releaseconnection(imapobj, True)
+                return self.acquireconnection()
+
             return imapobj
 
         self.connectionlock.release()  # Release until need to modify data
